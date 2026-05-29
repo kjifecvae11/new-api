@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -166,4 +168,80 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 	default:
 		return nil, fmt.Errorf("unsupported proxy scheme: %s, must be http, https, socks5 or socks5h", parsedURL.Scheme)
 	}
+}
+
+// NewNoReuseHttpClient creates a relay HTTP client that avoids connection reuse
+// and HTTP/2. It is intended for upstreams that are sensitive to stale pooled
+// connections on long-running relay processes.
+func NewNoReuseHttpClient(proxyURL string) (*http.Client, error) {
+	transport, err := newNoReuseTransport(strings.TrimSpace(proxyURL))
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{
+		Transport:     transport,
+		CheckRedirect: checkRedirect,
+	}
+	if common.RelayTimeout > 0 {
+		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
+	}
+	return client, nil
+}
+
+func newNoReuseTransport(proxyURL string) (*http.Transport, error) {
+	if proxyURL == "" {
+		transport := noReuseBaseTransport()
+		transport.Proxy = http.ProxyFromEnvironment
+		return transport, nil
+	}
+
+	parsedURL, err := url.Parse(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+
+	transport := noReuseBaseTransport()
+	switch parsedURL.Scheme {
+	case "http", "https":
+		transport.Proxy = http.ProxyURL(parsedURL)
+		return transport, nil
+
+	case "socks5", "socks5h":
+		var auth *proxy.Auth
+		if parsedURL.User != nil {
+			auth = &proxy.Auth{
+				User:     parsedURL.User.Username(),
+				Password: "",
+			}
+			if password, ok := parsedURL.User.Password(); ok {
+				auth.Password = password
+			}
+		}
+
+		dialer, err := proxy.SOCKS5("tcp", parsedURL.Host, auth, proxy.Direct)
+		if err != nil {
+			return nil, err
+		}
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		}
+		return transport, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported proxy scheme: %s, must be http, https, socks5 or socks5h", parsedURL.Scheme)
+	}
+}
+
+func noReuseBaseTransport() *http.Transport {
+	transport := &http.Transport{
+		MaxIdleConns:        common.RelayMaxIdleConns,
+		MaxIdleConnsPerHost: common.RelayMaxIdleConnsPerHost,
+		DisableKeepAlives:   true,
+		ForceAttemptHTTP2:   false,
+		TLSNextProto:        map[string]func(string, *tls.Conn) http.RoundTripper{},
+	}
+	if common.TLSInsecureSkipVerify {
+		transport.TLSClientConfig = common.InsecureTLSConfig
+	}
+	return transport
 }

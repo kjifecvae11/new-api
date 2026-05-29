@@ -288,6 +288,14 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 }
 
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
+	return doApiRequest(a, c, info, requestBody, nil)
+}
+
+func DoApiRequestWithClient(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader, client *http.Client) (*http.Response, error) {
+	return doApiRequest(a, c, info, requestBody, client)
+}
+
+func doApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader, client *http.Client) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
@@ -311,7 +319,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
-	resp, err := doRequest(c, req, info)
+	resp, err := doRequestWithClient(c, req, info, client)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
@@ -484,9 +492,13 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	return doRequest(c, req, info)
 }
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
-	var client *http.Client
+	return doRequestWithClient(c, req, info, nil)
+}
+func doRequestWithClient(c *gin.Context, req *http.Request, info *common.RelayInfo, client *http.Client) (*http.Response, error) {
 	var err error
-	if info.ChannelSetting.Proxy != "" {
+	if client != nil {
+		// The caller supplied a channel-specific client.
+	} else if info.ChannelSetting.Proxy != "" {
 		client, err = service.NewProxyHttpClient(info.ChannelSetting.Proxy)
 		if err != nil {
 			return nil, fmt.Errorf("new proxy http client failed: %w", err)
