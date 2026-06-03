@@ -21,6 +21,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { getUserModels } from '@/lib/api'
+import { resolveServerAddress } from '@/lib/server-address'
 import { Button } from '@/components/ui/button'
 import { ComboboxInput } from '@/components/ui/combobox-input'
 import {
@@ -63,12 +64,12 @@ function getServerAddress(): string {
     const raw = localStorage.getItem('status')
     if (raw) {
       const status = JSON.parse(raw)
-      if (status.server_address) return status.server_address
+      return resolveServerAddress(status)
     }
   } catch {
     /* empty */
   }
-  return window.location.origin
+  return resolveServerAddress()
 }
 
 function buildCCSwitchURL(

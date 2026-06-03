@@ -71,6 +71,82 @@ export async function fetchTokenKeys() {
   }
 }
 
+function cleanServerAddress(value) {
+  if (typeof value !== 'string') return '';
+  const cleaned = value.trim().replace(/\/+$/, '');
+  const lower = cleaned.toLowerCase();
+  if (lower.startsWith('wss://'))
+    return `https://${cleaned.slice('wss://'.length)}`;
+  if (lower.startsWith('ws://'))
+    return `http://${cleaned.slice('ws://'.length)}`;
+  return cleaned;
+}
+
+function getAddressOrigin(value) {
+  try {
+    return new URL(value).origin;
+  } catch (_) {
+    return cleanServerAddress(value);
+  }
+}
+
+function isSameOrigin(first, second) {
+  const left = getAddressOrigin(first).toLowerCase();
+  const right = getAddressOrigin(second).toLowerCase();
+  return left !== '' && left === right;
+}
+
+function isDefaultLocalServerAddress(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return (
+      url.protocol === 'http:' &&
+      url.port === '3000' &&
+      (host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === '[::1]' ||
+        host === '::1')
+    );
+  } catch (_) {
+    return cleanServerAddress(value).toLowerCase() === 'http://localhost:3000';
+  }
+}
+
+function getWindowOrigin() {
+  if (typeof window === 'undefined') return '';
+  return window.location.origin;
+}
+
+export function extractConfiguredServerAddress(status) {
+  return cleanServerAddress(
+    status?.server_address ??
+      status?.serverAddress ??
+      status?.data?.server_address ??
+      status?.data?.serverAddress,
+  );
+}
+
+export function resolveServerAddress(
+  status,
+  fallbackOrigin = getWindowOrigin(),
+) {
+  const configured = extractConfiguredServerAddress(status);
+  const fallback = cleanServerAddress(fallbackOrigin);
+
+  if (!configured) return fallback;
+
+  if (
+    isDefaultLocalServerAddress(configured) &&
+    fallback &&
+    !isSameOrigin(configured, fallback)
+  ) {
+    return import.meta.env.DEV ? configured : fallback;
+  }
+
+  return configured;
+}
+
 /**
  * 获取服务器地址
  * @returns {string} 服务器地址
@@ -82,14 +158,14 @@ export function getServerAddress() {
   if (status) {
     try {
       status = JSON.parse(status);
-      serverAddress = status.server_address || '';
+      serverAddress = resolveServerAddress(status);
     } catch (error) {
       console.error('Failed to parse status from localStorage:', error);
     }
   }
 
   if (!serverAddress) {
-    serverAddress = window.location.origin;
+    serverAddress = resolveServerAddress();
   }
 
   return serverAddress;
