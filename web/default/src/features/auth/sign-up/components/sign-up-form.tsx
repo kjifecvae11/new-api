@@ -84,10 +84,19 @@ export function SignUpForm({
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
   const requiresLegalConsent = hasUserAgreement || hasPrivacyPolicy
-  const oauthRegisterEnabled =
-    status?.oauth_register_enabled ??
-    status?.data?.oauth_register_enabled ??
+  const registerEnabled =
+    status?.register_enabled ?? status?.data?.register_enabled ?? true
+  const passwordRegisterEnabled =
+    status?.password_register_enabled ??
+    status?.data?.password_register_enabled ??
     true
+  const passwordRegistrationEnabled =
+    registerEnabled && passwordRegisterEnabled
+  const oauthRegisterEnabled =
+    registerEnabled &&
+    (status?.oauth_register_enabled ??
+      status?.data?.oauth_register_enabled ??
+      true)
   const hasWeChatLogin = Boolean(status?.wechat_login)
 
   const wechatQrCodeUrl = useMemo(() => {
@@ -323,7 +332,11 @@ export function SignUpForm({
         <Button
           type='submit'
           className='mt-2 w-full justify-center gap-2'
-          disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
+          disabled={
+            isLoading ||
+            !passwordRegistrationEnabled ||
+            (requiresLegalConsent && !agreedToLegal)
+          }
         >
           {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : null}
           {t('Create account')}
