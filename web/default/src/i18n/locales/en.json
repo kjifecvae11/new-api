@@ -2807,6 +2807,7 @@
     "Password must be at least 8 characters": "Password must be at least 8 characters",
     "Password must be at least 8 characters long": "Password must be at least 8 characters long",
     "Password Registration": "Password Registration",
+    "Password registration has been disabled by administrator": "Password registration has been disabled by administrator",
     "Password reset and copied to clipboard: {{password}}": "Password reset and copied to clipboard: {{password}}",
     "Password reset: {{password}}": "Password reset: {{password}}",
     "Passwords do not match": "Passwords do not match",

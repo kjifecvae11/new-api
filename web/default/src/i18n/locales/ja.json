@@ -2807,6 +2807,7 @@
     "Password must be at least 8 characters": "パスワードは少なくとも8文字である必要があります",
     "Password must be at least 8 characters long": "パスワードは8文字以上である必要があります",
     "Password Registration": "パスワード登録",
+    "Password registration has been disabled by administrator": "管理者によりパスワード登録が無効化されています",
     "Password reset and copied to clipboard: {{password}}": "パスワードがリセットされ、クリップボードにコピーされました：{{password}}",
     "Password reset: {{password}}": "パスワードがリセットされました：{{password}}",
     "Passwords do not match": "パスワードが一致しません",

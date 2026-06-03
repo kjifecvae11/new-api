@@ -2807,6 +2807,7 @@
     "Password must be at least 8 characters": "Пароль должен содержать не менее 8 символов",
     "Password must be at least 8 characters long": "Пароль должен содержать не менее 8 символов",
     "Password Registration": "Регистрация пароля",
+    "Password registration has been disabled by administrator": "Регистрация по паролю отключена администратором",
     "Password reset and copied to clipboard: {{password}}": "Пароль сброшен и скопирован в буфер обмена: {{password}}",
     "Password reset: {{password}}": "Пароль сброшен: {{password}}",
     "Passwords do not match": "Пароли не совпадают",

@@ -2807,6 +2807,7 @@
     "Password must be at least 8 characters": "密码必须至少 8 个字符",
     "Password must be at least 8 characters long": "密码必须至少 8 个字符长",
     "Password Registration": "密码注册",
+    "Password registration has been disabled by administrator": "管理员已禁用密码注册",
     "Password reset and copied to clipboard: {{password}}": "密码已重置并复制到剪贴板：{{password}}",
     "Password reset: {{password}}": "密码已重置：{{password}}",
     "Passwords do not match": "密码不匹配",

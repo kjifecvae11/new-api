@@ -2807,6 +2807,7 @@
     "Password must be at least 8 characters": "Mật khẩu phải có ít nhất 8 ký tự",
     "Password must be at least 8 characters long": "Mật khẩu phải có ít nhất 8 ký tự",
     "Password Registration": "Đăng ký mật khẩu",
+    "Password registration has been disabled by administrator": "Đăng ký bằng mật khẩu đã bị quản trị viên tắt",
     "Password reset and copied to clipboard: {{password}}": "Mật khẩu đã đặt lại và sao chép vào clipboard: {{password}}",
     "Password reset: {{password}}": "Mật khẩu đã đặt lại: {{password}}",
     "Passwords do not match": "Mật khẩu không khớp",
