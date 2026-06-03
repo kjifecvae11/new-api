@@ -75,8 +75,10 @@ function cleanServerAddress(value) {
   if (typeof value !== 'string') return '';
   const cleaned = value.trim().replace(/\/+$/, '');
   const lower = cleaned.toLowerCase();
-  if (lower.startsWith('wss://')) return `https://${cleaned.slice('wss://'.length)}`;
-  if (lower.startsWith('ws://')) return `http://${cleaned.slice('ws://'.length)}`;
+  if (lower.startsWith('wss://'))
+    return `https://${cleaned.slice('wss://'.length)}`;
+  if (lower.startsWith('ws://'))
+    return `http://${cleaned.slice('ws://'.length)}`;
   return cleaned;
 }
 
@@ -101,7 +103,10 @@ function isDefaultLocalServerAddress(value) {
     return (
       url.protocol === 'http:' &&
       url.port === '3000' &&
-      (host === 'localhost' || host === '127.0.0.1' || host === '[::1]')
+      (host === 'localhost' ||
+        host === '127.0.0.1' ||
+        host === '[::1]' ||
+        host === '::1')
     );
   } catch (_) {
     return cleanServerAddress(value).toLowerCase() === 'http://localhost:3000';
@@ -122,7 +127,10 @@ export function extractConfiguredServerAddress(status) {
   );
 }
 
-export function resolveServerAddress(status, fallbackOrigin = getWindowOrigin()) {
+export function resolveServerAddress(
+  status,
+  fallbackOrigin = getWindowOrigin(),
+) {
   const configured = extractConfiguredServerAddress(status);
   const fallback = cleanServerAddress(fallbackOrigin);
 

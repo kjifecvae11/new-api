@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { resolveServerAddress } from '@/lib/server-address'
 import { useStatus } from '@/hooks/use-status'
 import { resolveServerAddress } from '@/lib/server-address'
 import type { SystemStatus } from '@/features/auth/types'
