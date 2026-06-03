@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
@@ -148,7 +149,26 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		path = "/backend-api/codex/responses/compact"
 	}
-	return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, path, info.ChannelType), nil
+	baseURL := normalizeCodexResponsesBaseURL(info.ChannelBaseUrl)
+	info.ChannelBaseUrl = baseURL
+	return relaycommon.GetFullRequestURL(baseURL, path, info.ChannelType), nil
+}
+
+func normalizeCodexResponsesBaseURL(baseURL string) string {
+	normalized := strings.TrimSpace(baseURL)
+	if normalized == "" {
+		normalized = appconstant.ChannelBaseURLs[appconstant.ChannelTypeCodex]
+	}
+
+	lower := strings.ToLower(normalized)
+	switch {
+	case strings.HasPrefix(lower, "wss://"):
+		normalized = "https://" + normalized[len("wss://"):]
+	case strings.HasPrefix(lower, "ws://"):
+		normalized = "http://" + normalized[len("ws://"):]
+	}
+
+	return strings.TrimRight(normalized, "/")
 }
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useStatus } from '@/hooks/use-status'
+import { resolveServerAddress } from '@/lib/server-address'
 import type { SystemStatus } from '@/features/auth/types'
 import {
   type ChatPreset,
@@ -19,24 +20,6 @@ function getStoredStatusChats(): RawChatConfig {
   }
 }
 
-function extractServerAddress(status: SystemStatus | null) {
-  const fromStatus =
-    (status?.server_address as string | undefined) ??
-    (status?.serverAddress as string | undefined) ??
-    status?.data?.server_address ??
-    (status?.data as Record<string, unknown> | undefined)?.serverAddress
-
-  if (fromStatus && typeof fromStatus === 'string') {
-    return fromStatus
-  }
-
-  if (typeof window !== 'undefined') {
-    return window.location.origin
-  }
-
-  return ''
-}
-
 function extractChats(status: SystemStatus | null): RawChatConfig {
   const raw =
     status?.Chats ?? status?.chats ?? status?.data?.Chats ?? status?.data?.chats
@@ -50,7 +33,7 @@ export function useChatPresets(): {
 } {
   const { status } = useStatus()
 
-  const serverAddress = useMemo(() => extractServerAddress(status), [status])
+  const serverAddress = useMemo(() => resolveServerAddress(status), [status])
 
   const chatPresets = useMemo(() => {
     const raw = extractChats(status)
