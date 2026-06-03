@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { resolveServerAddress } from '@/lib/server-address'
+
 export function sendToFluent(apiKey: string, serverAddress?: string): boolean {
   if (typeof window === 'undefined') {
     return false
@@ -26,9 +28,13 @@ export function sendToFluent(apiKey: string, serverAddress?: string): boolean {
     return false
   }
 
+  const baseUrl = serverAddress
+    ? resolveServerAddress({ server_address: serverAddress })
+    : resolveServerAddress()
+
   const payload = {
     id: 'new-api',
-    baseUrl: serverAddress || window.location.origin,
+    baseUrl,
     apiKey: `sk-${apiKey}`,
   }
 
