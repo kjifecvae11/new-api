@@ -91,11 +91,11 @@ var defaultModelRatio = map[string]float64{
 	"gpt-4-turbo-2024-04-09":           5, // $0.01 / 1K tokens
 	"gpt-4.5-preview":                  37.5,
 	"gpt-4.5-preview-2025-02-27":       37.5,
-	"gpt-5":                            0.625,
-	"gpt-5-2025-08-07":                 0.625,
-	"gpt-5-chat-latest":                0.625,
-	"gpt-5-mini":                       0.125,
-	"gpt-5-mini-2025-08-07":            0.125,
+	"gpt-5":                            0.525,
+	"gpt-5-2025-08-07":                 0.525,
+	"gpt-5-chat-latest":                0.525,
+	"gpt-5-mini":                       0.105,
+	"gpt-5-mini-2025-08-07":            0.105,
 	"gpt-5-nano":                       0.025,
 	"gpt-5-nano-2025-08-07":            0.025,
 	//"gpt-3.5-turbo-0301":           0.75, //deprecated
@@ -139,8 +139,11 @@ var defaultModelRatio = map[string]float64{
 	"claude-3-7-sonnet-20250219":                1.5,
 	"claude-3-7-sonnet-20250219-thinking":       1.5,
 	"claude-sonnet-4-20250514":                  1.5,
-	"claude-sonnet-4-5-20250929":                1.5,
+	"claude-sonnet-4-5-20250929":                2.1,
+	"claude-sonnet-4-5-20250929-thinking":       2.1,
+	"claude-sonnet-4.5":                         2.1,
 	"claude-opus-4-5-20251101":                  2.5,
+	"claude-opus-4-8":                           4.25,
 	"claude-opus-4-6":                           2.5,
 	"claude-opus-4-6-max":                       2.5,
 	"claude-opus-4-6-high":                      2.5,
@@ -190,6 +193,9 @@ var defaultModelRatio = map[string]float64{
 	"gemini-2.5-flash-lite-preview-06-17":       0.05,
 	"gemini-2.5-flash":                          0.15,
 	"gemini-robotics-er-1.5-preview":            0.15,
+	"gemini-3.1-flash-lite":                     0.225,
+	"gemini-3.1-flash-lite-preview":             0.225,
+	"gemini-3.5-flash":                          1.575,
 	"gemini-embedding-001":                      0.075,
 	"text-embedding-004":                        0.001,
 	"chatglm_turbo":                             0.3572,     // ￥0.005 / 1k tokens
@@ -249,6 +255,9 @@ var defaultModelRatio = map[string]float64{
 	"deepseek-chat":          0.27 / 2,
 	"deepseek-coder":         0.27 / 2,
 	"deepseek-reasoner":      0.55 / 2, // 0.55 / 1k tokens
+	"deepseek-v4-flash":      0.6,
+	"deepseek-v4-flash-none": 0.6,
+	"deepseek-v4-flash-max":  0.6,
 	// Perplexity online 模型对搜索额外收费，有需要应自行调整，此处不计入搜索费用
 	"llama-3-sonar-small-32k-chat":   0.2 / 1000 * USD,
 	"llama-3-sonar-small-32k-online": 0.2 / 1000 * USD,
@@ -274,15 +283,21 @@ var defaultModelRatio = map[string]float64{
 	"deepseek-ai/DeepSeek-R1":                 0.8,
 	"deepseek-ai/DeepSeek-V3-0324":            0.8,
 	"deepseek-ai/DeepSeek-V3.1":               0.8,
+	"qwen3.7-plus":                            2.1,
 }
 
 var defaultModelPrice = map[string]float64{
-	"suno_music":                     0.1,
+	"suno_music":                     0.05,
+	"suno_music_open":                0.05,
 	"suno_lyrics":                    0.01,
 	"dall-e-3":                       0.04,
 	"imagen-3.0-generate-002":        0.03,
 	"black-forest-labs/flux-1.1-pro": 0.04,
 	"gpt-4-gizmo-*":                  0.1,
+	"qwen-image":                     0.35,
+	"qwen-image-2.0":                 0.35,
+	"wan2.7":                         0.89,
+	"wan2.7-image-pro":               0.89,
 	"mj_video":                       0.8,
 	"mj_imagine":                     0.1,
 	"mj_edits":                       0.1,
@@ -333,10 +348,26 @@ var modelRatioMap = types.NewRWMap[string, float64]()
 var completionRatioMap = types.NewRWMap[string, float64]()
 
 var defaultCompletionRatio = map[string]float64{
-	"gpt-4-gizmo-*":  2,
-	"gpt-4o-gizmo-*": 3,
-	"gpt-4-all":      2,
-	"gpt-image-1":    8,
+	"gpt-4-gizmo-*":                       2,
+	"gpt-4o-gizmo-*":                      3,
+	"gpt-4-all":                           2,
+	"gpt-image-1":                         8,
+	"gpt-5":                               8,
+	"gpt-5-2025-08-07":                    8,
+	"gpt-5-chat-latest":                   8,
+	"gpt-5-mini":                          8,
+	"gpt-5-mini-2025-08-07":               8,
+	"claude-sonnet-4-5-20250929":          5,
+	"claude-sonnet-4-5-20250929-thinking": 5,
+	"claude-sonnet-4.5":                   5,
+	"claude-opus-4-8":                     5,
+	"gemini-3.1-flash-lite":               6,
+	"gemini-3.1-flash-lite-preview":       6,
+	"gemini-3.5-flash":                    6,
+	"deepseek-v4-flash":                   2,
+	"deepseek-v4-flash-none":              2,
+	"deepseek-v4-flash-max":               2,
+	"qwen3.7-plus":                        4,
 }
 
 // InitRatioSettings initializes all model related settings maps
