@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -68,6 +69,59 @@ func GetHttpClientWithProxy(proxyURL string) (*http.Client, error) {
 		return GetHttpClient(), nil
 	}
 	return NewProxyHttpClient(proxyURL)
+}
+
+func NewNoReuseHttpClient(proxyURL string) (*http.Client, error) {
+	transport := &http.Transport{
+		DisableKeepAlives: true,
+		ForceAttemptHTTP2: false,
+		TLSNextProto:      map[string]func(string, *tls.Conn) http.RoundTripper{},
+		Proxy:             http.ProxyFromEnvironment,
+	}
+	if common.TLSInsecureSkipVerify {
+		transport.TLSClientConfig = common.InsecureTLSConfig
+	}
+
+	if proxyURL != "" {
+		parsedURL, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, err
+		}
+
+		switch parsedURL.Scheme {
+		case "http", "https":
+			transport.Proxy = http.ProxyURL(parsedURL)
+		case "socks5", "socks5h":
+			var auth *proxy.Auth
+			if parsedURL.User != nil {
+				auth = &proxy.Auth{
+					User: parsedURL.User.Username(),
+				}
+				if password, ok := parsedURL.User.Password(); ok {
+					auth.Password = password
+				}
+			}
+			dialer, err := proxy.SOCKS5("tcp", parsedURL.Host, auth, proxy.Direct)
+			if err != nil {
+				return nil, err
+			}
+			transport.Proxy = nil
+			transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialer.Dial(network, addr)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported proxy scheme: %s, must be http, https, socks5 or socks5h", parsedURL.Scheme)
+		}
+	}
+
+	client := &http.Client{
+		Transport:     transport,
+		CheckRedirect: checkRedirect,
+	}
+	if common.RelayTimeout != 0 {
+		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
+	}
+	return client, nil
 }
 
 // ResetProxyClientCache 清空代理客户端缓存，确保下次使用时重新初始化

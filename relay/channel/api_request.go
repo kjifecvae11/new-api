@@ -305,6 +305,10 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 }
 
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
+	return DoApiRequestWithClient(a, c, info, requestBody, nil)
+}
+
+func DoApiRequestWithClient(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader, client *http.Client) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
@@ -327,7 +331,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
-	resp, err := doRequest(c, req, info)
+	resp, err := doRequestWithClient(c, req, info, client)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
@@ -484,6 +488,7 @@ func sendPingData(c *gin.Context, mutex *sync.Mutex) error {
 func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	return doRequest(c, req, info)
 }
+
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	var client *http.Client
 	var err error
@@ -495,7 +500,13 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	} else {
 		client = service.GetHttpClient()
 	}
+	return doRequestWithClient(c, req, info, client)
+}
 
+func doRequestWithClient(c *gin.Context, req *http.Request, info *common.RelayInfo, client *http.Client) (*http.Response, error) {
+	if client == nil {
+		client = service.GetHttpClient()
+	}
 	var stopPinger context.CancelFunc
 	if info.IsStream {
 		helper.SetEventStreamHeaders(c)
