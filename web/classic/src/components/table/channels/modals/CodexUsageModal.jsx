@@ -139,6 +139,29 @@ const getDisplayText = (value) => {
   return String(value).trim();
 };
 
+const pickDisplayText = (...values) => {
+  for (const value of values) {
+    const text = getDisplayText(value);
+    if (text) return text;
+  }
+  return '';
+};
+
+const parseClaudeCodeAuthDetails = (outputLines) => {
+  if (!Array.isArray(outputLines) || outputLines.length === 0) return {};
+  const text = outputLines.join('\n').trim();
+  if (!text.startsWith('{')) return {};
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed;
+  } catch (error) {
+    return {};
+  }
+};
+
 const isMobileViewport = () =>
   typeof window !== 'undefined' && window.innerWidth < MOBILE_BREAKPOINT;
 
@@ -573,6 +596,25 @@ const renderClaudeCodeAuthTag = (t, data) => {
   return <Tag color='red'>{tt('未登录')}</Tag>;
 };
 
+const formatClaudeCodeStatusLabel = (value, t) => {
+  const tt = typeof t === 'function' ? t : (v) => v;
+  const normalized = getDisplayText(value).toLowerCase();
+  switch (normalized) {
+    case 'authenticated':
+      return tt('已登录');
+    case 'not_authenticated':
+      return tt('未登录');
+    case 'timeout':
+      return tt('检查超时');
+    case 'error':
+      return tt('检查失败');
+    case 'unknown':
+      return tt('未知');
+    default:
+      return getDisplayText(value) || '-';
+  }
+};
+
 const ClaudeCodeAccountInfoView = ({
   t,
   record,
@@ -587,8 +629,49 @@ const ClaudeCodeAccountInfoView = ({
   const outputLines = Array.isArray(authStatus?.output_lines)
     ? authStatus.output_lines
     : [];
+  const authDetails = parseClaudeCodeAuthDetails(outputLines);
   const models = Array.isArray(data?.models) ? data.models : [];
   const upstreamStatus = payload?.upstream_status;
+  const email = pickDisplayText(
+    authStatus?.email,
+    data?.email,
+    data?.account,
+    authDetails?.email,
+  );
+  const subscriptionType = pickDisplayText(
+    authStatus?.subscription_type,
+    data?.plan,
+    authDetails?.subscriptionType,
+    authDetails?.subscription_type,
+    authDetails?.plan,
+  );
+  const orgName = pickDisplayText(
+    authStatus?.org_name,
+    data?.organization,
+    authDetails?.orgName,
+    authDetails?.org_name,
+  );
+  const orgId = pickDisplayText(
+    authStatus?.org_id,
+    data?.organization_id,
+    authDetails?.orgId,
+    authDetails?.org_id,
+  );
+  const authMethod = pickDisplayText(
+    authStatus?.auth_method,
+    data?.auth_method,
+    authDetails?.authMethod,
+    authDetails?.auth_method,
+  );
+  const apiProvider = pickDisplayText(
+    authStatus?.api_provider,
+    data?.api_provider,
+    authDetails?.apiProvider,
+    authDetails?.api_provider,
+  );
+  const authProvider = [authMethod, apiProvider].filter(Boolean).join(' / ');
+  const statusText = pickDisplayText(authStatus?.status, data?.status);
+  const statusLabel = formatClaudeCodeStatusLabel(statusText, tt);
   const errorMessage =
     payload?.success === false
       ? getDisplayText(payload?.message) || tt('获取帐号信息失败')
@@ -615,6 +698,15 @@ const ClaudeCodeAccountInfoView = ({
                 Claude Code
               </Tag>
               {renderClaudeCodeAuthTag(tt, data)}
+              {subscriptionType ? (
+                <Tag
+                  color={getAccountTypeTagColor(subscriptionType)}
+                  type='light'
+                  shape='circle'
+                >
+                  {formatAccountTypeLabel(subscriptionType, tt)}
+                </Tag>
+              ) : null}
               <Tag color='grey' type='light' shape='circle'>
                 {tt('上游状态码：')}
                 {upstreamStatus ?? '-'}
@@ -636,7 +728,32 @@ const ClaudeCodeAccountInfoView = ({
             <Descriptions.Item itemKey={tt('邮箱')}>
               <AccountInfoValue
                 t={tt}
-                value={authStatus?.email}
+                value={email}
+                onCopy={onCopy}
+              />
+            </Descriptions.Item>
+            <Descriptions.Item itemKey={tt('订阅')}>
+              <AccountInfoValue
+                t={tt}
+                value={subscriptionType}
+                onCopy={onCopy}
+              />
+            </Descriptions.Item>
+            <Descriptions.Item itemKey={tt('组织')}>
+              <AccountInfoValue t={tt} value={orgName} onCopy={onCopy} />
+            </Descriptions.Item>
+            <Descriptions.Item itemKey='Org ID'>
+              <AccountInfoValue
+                t={tt}
+                value={orgId}
+                onCopy={onCopy}
+                monospace={true}
+              />
+            </Descriptions.Item>
+            <Descriptions.Item itemKey={tt('认证')}>
+              <AccountInfoValue
+                t={tt}
+                value={authProvider}
                 onCopy={onCopy}
               />
             </Descriptions.Item>
@@ -651,7 +768,7 @@ const ClaudeCodeAccountInfoView = ({
             <Descriptions.Item itemKey={tt('状态')}>
               <AccountInfoValue
                 t={tt}
-                value={authStatus?.summary || data?.message || data?.status}
+                value={statusLabel}
                 onCopy={onCopy}
               />
             </Descriptions.Item>
