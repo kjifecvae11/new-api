@@ -43,6 +43,7 @@ import {
   CHANNEL_OPTIONS,
   MODEL_FETCHABLE_CHANNEL_TYPES,
 } from '../../../constants';
+import { getChannelAccountInfoKind } from './channelAccountInfo';
 import { parseUpstreamUpdateMeta } from '../../../hooks/channels/upstreamUpdateUtils';
 import {
   IconTreeTriangleDown,
@@ -528,6 +529,13 @@ export const getChannelsColumns = ({
       dataIndex: 'expired_time',
       render: (text, record, index) => {
         if (record.children === undefined) {
+          const accountInfoKind = getChannelAccountInfoKind(record);
+          const hasAccountInfo = accountInfoKind !== null;
+          const accountInfoTooltip =
+            accountInfoKind === 'codex'
+              ? t('查看 Codex 帐号信息与用量')
+              : t('查看 Claude Code 帐号信息');
+
           return (
             <div>
               <Space spacing={1}>
@@ -538,8 +546,8 @@ export const getChannelsColumns = ({
                 </Tooltip>
                 <Tooltip
                   content={
-                    record.type === 57
-                      ? t('查看 Codex 帐号信息与用量')
+                    hasAccountInfo
+                      ? accountInfoTooltip
                       : t('剩余额度') +
                         ': ' +
                         renderQuotaWithAmount(record.balance) +
@@ -547,14 +555,14 @@ export const getChannelsColumns = ({
                   }
                 >
                   <Tag
-                    color={record.type === 57 ? 'light-blue' : 'white'}
-                    type={record.type === 57 ? 'light' : 'ghost'}
+                    color={hasAccountInfo ? 'light-blue' : 'white'}
+                    type={hasAccountInfo ? 'light' : 'ghost'}
                     shape='circle'
-                    className={record.type === 57 ? 'cursor-pointer' : ''}
+                    className={hasAccountInfo ? 'cursor-pointer' : ''}
                     onClick={() => updateChannelBalance(record)}
                   >
-                    {record.type === 57
-                      ? t('帐号信息')
+                    {hasAccountInfo
+                      ? t('账号信息')
                       : renderQuotaWithAmount(record.balance)}
                   </Tag>
                 </Tooltip>

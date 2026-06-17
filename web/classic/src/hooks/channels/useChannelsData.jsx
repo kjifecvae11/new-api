@@ -38,7 +38,8 @@ import { useTableCompactMode } from '../common/useTableCompactMode';
 import { useChannelUpstreamUpdates } from './useChannelUpstreamUpdates';
 import { parseUpstreamUpdateMeta } from './upstreamUpdateUtils';
 import { Modal, Button } from '@douyinfe/semi-ui';
-import { openCodexUsageModal } from '../../components/table/channels/modals/CodexUsageModal';
+import { getChannelAccountInfoKind } from '../../components/table/channels/channelAccountInfo';
+import { openChannelAccountInfoModal } from '../../components/table/channels/modals/CodexUsageModal';
 
 export const useChannelsData = () => {
   const { t } = useTranslation();
@@ -754,8 +755,8 @@ export const useChannelsData = () => {
   };
 
   const updateChannelBalance = async (record) => {
-    if (record?.type === 57) {
-      openCodexUsageModal({
+    if (getChannelAccountInfoKind(record)) {
+      openChannelAccountInfoModal({
         t,
         record,
         onCopy: async (text) => {
