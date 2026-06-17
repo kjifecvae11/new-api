@@ -9,6 +9,11 @@ export function SignIn() {
   const { t } = useTranslation()
   const { redirect } = useSearch({ from: '/(auth)/sign-in' })
   const { status } = useStatus()
+  const registerEnabled =
+    status?.register_enabled ?? status?.data?.register_enabled ?? true
+  const selfUseModeEnabled =
+    status?.self_use_mode_enabled ?? status?.data?.self_use_mode_enabled ?? false
+  const showSignUpLink = registerEnabled && !selfUseModeEnabled
 
   return (
     <AuthLayout>
@@ -17,7 +22,7 @@ export function SignIn() {
           <h2 className='text-center text-2xl font-semibold tracking-tight sm:text-left'>
             {t('Sign in')}
           </h2>
-          {!status?.self_use_mode_enabled && (
+          {showSignUpLink && (
             <p className='text-muted-foreground text-left text-sm sm:text-base'>
               {t("Don't have an account?")}{' '}
               <Link

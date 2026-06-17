@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -19,6 +20,93 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func cleanServerAddress(address string) string {
+	cleaned := strings.TrimRight(strings.TrimSpace(address), "/")
+	lower := strings.ToLower(cleaned)
+	switch {
+	case strings.HasPrefix(lower, "wss://"):
+		return "https://" + cleaned[len("wss://"):]
+	case strings.HasPrefix(lower, "ws://"):
+		return "http://" + cleaned[len("ws://"):]
+	default:
+		return cleaned
+	}
+}
+
+func normalizeServerOrigin(address string) string {
+	cleaned := cleanServerAddress(address)
+	if parsed, err := url.Parse(cleaned); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		return strings.ToLower(parsed.Scheme + "://" + parsed.Host)
+	}
+	return strings.ToLower(cleaned)
+}
+
+func firstHeaderValue(value string) string {
+	if index := strings.Index(value, ","); index >= 0 {
+		value = value[:index]
+	}
+	return strings.TrimSpace(value)
+}
+
+func forwardedHeaderValue(header string, key string) string {
+	header = firstHeaderValue(header)
+	for _, item := range strings.Split(header, ";") {
+		parts := strings.SplitN(strings.TrimSpace(item), "=", 2)
+		if len(parts) == 2 && strings.EqualFold(parts[0], key) {
+			return strings.Trim(strings.TrimSpace(parts[1]), `"`)
+		}
+	}
+	return ""
+}
+
+func requestOrigin(c *gin.Context) string {
+	host := firstHeaderValue(c.GetHeader("X-Forwarded-Host"))
+	if host == "" {
+		host = forwardedHeaderValue(c.GetHeader("Forwarded"), "host")
+	}
+	if host == "" {
+		host = c.Request.Host
+	}
+	if host == "" {
+		return ""
+	}
+
+	proto := firstHeaderValue(c.GetHeader("X-Forwarded-Proto"))
+	if proto == "" {
+		proto = forwardedHeaderValue(c.GetHeader("Forwarded"), "proto")
+	}
+	if proto == "" {
+		if c.Request.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+
+	return cleanServerAddress(proto + "://" + host)
+}
+
+func isDefaultLocalServerAddress(address string) bool {
+	switch normalizeServerOrigin(address) {
+	case "http://localhost:3000", "http://127.0.0.1:3000", "http://[::1]:3000":
+		return true
+	default:
+		return false
+	}
+}
+
+func statusServerAddress(c *gin.Context) string {
+	configured := cleanServerAddress(system_setting.ServerAddress)
+	origin := requestOrigin(c)
+	if configured == "" {
+		return origin
+	}
+	if isDefaultLocalServerAddress(configured) && origin != "" && normalizeServerOrigin(configured) != normalizeServerOrigin(origin) {
+		return origin
+	}
+	return configured
+}
 
 func TestStatus(c *gin.Context) {
 	err := model.PingDB()
@@ -67,9 +155,13 @@ func GetStatus(c *gin.Context) {
 		"footer_html":                 common.Footer,
 		"wechat_qrcode":               common.WeChatAccountQRCodeImageURL,
 		"wechat_login":                common.WeChatAuthEnabled,
-		"server_address":              system_setting.ServerAddress,
+		"server_address":              statusServerAddress(c),
 		"turnstile_check":             common.TurnstileCheckEnabled,
 		"turnstile_site_key":          common.TurnstileSiteKey,
+		"password_login_enabled":      common.PasswordLoginEnabled,
+		"register_enabled":            common.RegisterEnabled,
+		"password_register_enabled":   common.PasswordRegisterEnabled,
+		"oauth_register_enabled":      common.RegisterEnabled,
 		"docs_link":                   operation_setting.GetGeneralSetting().DocsLink,
 		"quota_per_unit":              common.QuotaPerUnit,
 		// 兼容旧前端：保留 display_in_currency，同时提供新的 quota_display_type

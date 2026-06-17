@@ -131,15 +131,23 @@ const RegisterForm = () => {
   }, [statusState?.status]);
   const hasCustomOAuthProviders =
     (status.custom_oauth_providers || []).length > 0;
-  const hasOAuthRegisterOptions = Boolean(
-    status.github_oauth ||
-      status.discord_oauth ||
-      status.oidc_enabled ||
-      status.wechat_login ||
-      status.linuxdo_oauth ||
-      status.telegram_oauth ||
-      hasCustomOAuthProviders,
-  );
+  const registerEnabled = status.register_enabled ?? true;
+  const passwordRegisterEnabled = status.password_register_enabled ?? true;
+  const passwordRegistrationEnabled =
+    registerEnabled && passwordRegisterEnabled;
+  const oauthRegisterEnabled =
+    registerEnabled && (status.oauth_register_enabled ?? true);
+  const hasOAuthRegisterOptions =
+    oauthRegisterEnabled &&
+    Boolean(
+      status.github_oauth ||
+        status.discord_oauth ||
+        status.oidc_enabled ||
+        status.wechat_login ||
+        status.linuxdo_oauth ||
+        status.telegram_oauth ||
+        hasCustomOAuthProviders,
+    );
 
   const [showEmailVerification, setShowEmailVerification] = useState(false);
 
@@ -216,6 +224,10 @@ const RegisterForm = () => {
   }
 
   async function handleSubmit(e) {
+    if (!passwordRegistrationEnabled) {
+      showError(t('管理员已关闭用户名密码注册'));
+      return;
+    }
     if (password.length < 8) {
       showInfo('密码长度不得小于 8 位！');
       return;
@@ -255,6 +267,10 @@ const RegisterForm = () => {
   }
 
   const sendVerificationCode = async () => {
+    if (!passwordRegistrationEnabled) {
+      showError(t('管理员已关闭用户名密码注册'));
+      return;
+    }
     if (inputs.email === '') return;
     if (turnstileEnabled && turnstileToken === '') {
       showInfo('请稍后几秒重试，Turnstile 正在检查用户环境！');
@@ -345,6 +361,10 @@ const RegisterForm = () => {
   };
 
   const handleEmailRegisterClick = () => {
+    if (!passwordRegistrationEnabled) {
+      showError(t('管理员已关闭用户名密码注册'));
+      return;
+    }
     setEmailRegisterLoading(true);
     setShowEmailRegister(true);
     setEmailRegisterLoading(false);
@@ -520,20 +540,24 @@ const RegisterForm = () => {
                   </div>
                 )}
 
-                <Divider margin='12px' align='center'>
-                  {t('或')}
-                </Divider>
+                {passwordRegistrationEnabled && (
+                  <>
+                    <Divider margin='12px' align='center'>
+                      {t('或')}
+                    </Divider>
 
-                <Button
-                  theme='solid'
-                  type='primary'
-                  className='w-full h-12 flex items-center justify-center bg-black text-white !rounded-full hover:bg-gray-800 transition-colors'
-                  icon={<IconMail size='large' />}
-                  onClick={handleEmailRegisterClick}
-                  loading={emailRegisterLoading}
-                >
-                  <span className='ml-3'>{t('使用 用户名 注册')}</span>
-                </Button>
+                    <Button
+                      theme='solid'
+                      type='primary'
+                      className='w-full h-12 flex items-center justify-center bg-black text-white !rounded-full hover:bg-gray-800 transition-colors'
+                      icon={<IconMail size='large' />}
+                      onClick={handleEmailRegisterClick}
+                      loading={emailRegisterLoading}
+                    >
+                      <span className='ml-3'>{t('使用 用户名 注册')}</span>
+                    </Button>
+                  </>
+                )}
               </div>
 
               <div className='mt-6 text-center text-sm'>
@@ -580,6 +604,7 @@ const RegisterForm = () => {
                   name='username'
                   onChange={(value) => handleChange('username', value)}
                   prefix={<IconUser />}
+                  disabled={!passwordRegistrationEnabled}
                 />
 
                 <Form.Input
@@ -590,6 +615,7 @@ const RegisterForm = () => {
                   mode='password'
                   onChange={(value) => handleChange('password', value)}
                   prefix={<IconLock />}
+                  disabled={!passwordRegistrationEnabled}
                 />
 
                 <Form.Input
@@ -600,6 +626,7 @@ const RegisterForm = () => {
                   mode='password'
                   onChange={(value) => handleChange('password2', value)}
                   prefix={<IconLock />}
+                  disabled={!passwordRegistrationEnabled}
                 />
 
                 {showEmailVerification && (
@@ -612,11 +639,16 @@ const RegisterForm = () => {
                       type='email'
                       onChange={(value) => handleChange('email', value)}
                       prefix={<IconMail />}
+                      disabled={!passwordRegistrationEnabled}
                       suffix={
                         <Button
                           onClick={sendVerificationCode}
                           loading={verificationCodeLoading}
-                          disabled={disableButton || verificationCodeLoading}
+                          disabled={
+                            !passwordRegistrationEnabled ||
+                            disableButton ||
+                            verificationCodeLoading
+                          }
                         >
                           {disableButton
                             ? `${t('重新发送')} (${countdown})`
@@ -633,6 +665,7 @@ const RegisterForm = () => {
                         handleChange('verification_code', value)
                       }
                       prefix={<IconKey />}
+                      disabled={!passwordRegistrationEnabled}
                     />
                   </>
                 )}
@@ -684,7 +717,8 @@ const RegisterForm = () => {
                     onClick={handleSubmit}
                     loading={registerLoading}
                     disabled={
-                      (hasUserAgreement || hasPrivacyPolicy) && !agreedToTerms
+                      !passwordRegistrationEnabled ||
+                      ((hasUserAgreement || hasPrivacyPolicy) && !agreedToTerms)
                     }
                   >
                     {t('注册')}
@@ -781,8 +815,7 @@ const RegisterForm = () => {
         style={{ top: '50%', left: '-120px' }}
       />
       <div className='w-full max-w-sm mt-[60px]'>
-        {showEmailRegister ||
-        !hasOAuthRegisterOptions
+        {showEmailRegister || !hasOAuthRegisterOptions
           ? renderEmailRegisterForm()
           : renderOAuthOptions()}
         {renderWeChatLoginModal()}

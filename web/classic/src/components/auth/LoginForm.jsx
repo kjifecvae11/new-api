@@ -142,6 +142,8 @@ const LoginForm = () => {
       status.telegram_oauth ||
       hasCustomOAuthProviders,
   );
+  const registerEnabled = status.register_enabled ?? true;
+  const showRegisterLink = registerEnabled && !status.self_use_mode_enabled;
 
   useEffect(() => {
     if (status?.turnstile_check) {
@@ -696,7 +698,7 @@ const LoginForm = () => {
                 </div>
               )}
 
-              {!status.self_use_mode_enabled && (
+              {showRegisterLink && (
                 <div className='mt-6 text-center text-sm'>
                   <Text>
                     {t('没有账户？')}{' '}
@@ -849,7 +851,7 @@ const LoginForm = () => {
                 </>
               )}
 
-              {!status.self_use_mode_enabled && (
+              {showRegisterLink && (
                 <div className='mt-6 text-center text-sm'>
                   <Text>
                     {t('没有账户？')}{' '}
@@ -958,8 +960,7 @@ const LoginForm = () => {
         style={{ top: '50%', left: '-120px' }}
       />
       <div className='w-full max-w-sm mt-[60px]'>
-        {showEmailLogin ||
-        !hasOAuthLoginOptions
+        {showEmailLogin || !hasOAuthLoginOptions
           ? renderEmailLoginForm()
           : renderOAuthOptions()}
         {renderWeChatLoginModal()}

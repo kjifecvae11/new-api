@@ -51,6 +51,9 @@ export function SignUpForm({
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
 
   const { status } = useStatus()
+  const passwordRegistrationDisabledMessage = t(
+    'Password registration has been disabled by administrator'
+  )
   const {
     isTurnstileEnabled,
     turnstileSiteKey,
@@ -84,10 +87,19 @@ export function SignUpForm({
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
   const requiresLegalConsent = hasUserAgreement || hasPrivacyPolicy
-  const oauthRegisterEnabled =
-    status?.oauth_register_enabled ??
-    status?.data?.oauth_register_enabled ??
+  const registerEnabled =
+    status?.register_enabled ?? status?.data?.register_enabled ?? true
+  const passwordRegisterEnabled =
+    status?.password_register_enabled ??
+    status?.data?.password_register_enabled ??
     true
+  const passwordRegistrationEnabled =
+    registerEnabled && passwordRegisterEnabled
+  const oauthRegisterEnabled =
+    registerEnabled &&
+    (status?.oauth_register_enabled ??
+      status?.data?.oauth_register_enabled ??
+      true)
   const hasWeChatLogin = Boolean(status?.wechat_login)
 
   const wechatQrCodeUrl = useMemo(() => {
@@ -113,6 +125,11 @@ export function SignUpForm({
   }, [requiresLegalConsent])
 
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
+    if (!passwordRegistrationEnabled) {
+      toast.error(passwordRegistrationDisabledMessage)
+      return
+    }
+
     if (requiresLegalConsent && !agreedToLegal) {
       toast.error(legalConsentErrorMessage)
       return
@@ -153,6 +170,11 @@ export function SignUpForm({
   }
 
   async function handleSendVerificationCode() {
+    if (!passwordRegistrationEnabled) {
+      toast.error(passwordRegistrationDisabledMessage)
+      return
+    }
+
     await sendCode(emailValue || '')
   }
 
@@ -211,7 +233,11 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>{t('Username')}</FormLabel>
               <FormControl>
-                <Input placeholder={t('Enter your username')} {...field} />
+                <Input
+                  placeholder={t('Enter your username')}
+                  disabled={!passwordRegistrationEnabled}
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -228,6 +254,7 @@ export function SignUpForm({
               <FormControl>
                 <PasswordInput
                   placeholder={t('Enter password (8-20 characters)')}
+                  disabled={!passwordRegistrationEnabled}
                   {...field}
                 />
               </FormControl>
@@ -244,7 +271,11 @@ export function SignUpForm({
             <FormItem>
               <FormLabel>{t('Confirm password')}</FormLabel>
               <FormControl>
-                <PasswordInput placeholder={t('Confirm password')} {...field} />
+                <PasswordInput
+                  placeholder={t('Confirm password')}
+                  disabled={!passwordRegistrationEnabled}
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -267,6 +298,7 @@ export function SignUpForm({
                     <Input
                       placeholder={t('name@example.com')}
                       type='email'
+                      disabled={!passwordRegistrationEnabled}
                       {...field}
                     />
                   </FormControl>
@@ -281,13 +313,20 @@ export function SignUpForm({
                 <Input
                   placeholder={t('Verification code')}
                   value={verificationCode}
+                  disabled={!passwordRegistrationEnabled}
                   onChange={(e) => setVerificationCode(e.target.value)}
                 />
               </div>
               <Button
                 variant='outline'
                 type='button'
-                disabled={isLoading || isSendingCode || isActive || !emailValue}
+                disabled={
+                  isLoading ||
+                  !passwordRegistrationEnabled ||
+                  isSendingCode ||
+                  isActive ||
+                  !emailValue
+                }
                 onClick={handleSendVerificationCode}
               >
                 {isActive ? (
@@ -323,7 +362,11 @@ export function SignUpForm({
         <Button
           type='submit'
           className='mt-2 w-full justify-center gap-2'
-          disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
+          disabled={
+            isLoading ||
+            !passwordRegistrationEnabled ||
+            (requiresLegalConsent && !agreedToLegal)
+          }
         >
           {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : null}
           {t('Create account')}
