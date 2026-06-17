@@ -30,6 +30,7 @@ import {
 } from '@douyinfe/semi-ui';
 import { API, showError } from '../../../../helpers';
 import { MOBILE_BREAKPOINT } from '../../../../hooks/common/useIsMobile';
+import { getChannelAccountInfoKind } from '../channelAccountInfo';
 
 const { Text } = Typography;
 
@@ -558,42 +559,211 @@ const CodexUsageView = ({ t, record, payload, onCopy, onRefresh }) => {
   );
 };
 
-const CodexUsageLoader = ({ t, record, initialPayload, onCopy }) => {
+const renderClaudeCodeAuthTag = (t, data) => {
+  const tt = typeof t === 'function' ? t : (v) => v;
+  if (data?.authenticated === true || data?.auth_status?.authenticated === true) {
+    return <Tag color='green'>{tt('已登录')}</Tag>;
+  }
+  if (data?.status === 'timeout') {
+    return <Tag color='yellow'>{tt('检查超时')}</Tag>;
+  }
+  if (data?.status === 'error') {
+    return <Tag color='red'>{tt('检查失败')}</Tag>;
+  }
+  return <Tag color='red'>{tt('未登录')}</Tag>;
+};
+
+const ClaudeCodeAccountInfoView = ({
+  t,
+  record,
+  payload,
+  onCopy,
+  onRefresh,
+}) => {
+  const tt = typeof t === 'function' ? t : (v) => v;
+  const [showRawJson, setShowRawJson] = useState(false);
+  const data = payload?.data ?? {};
+  const authStatus = data?.auth_status ?? {};
+  const outputLines = Array.isArray(authStatus?.output_lines)
+    ? authStatus.output_lines
+    : [];
+  const models = Array.isArray(data?.models) ? data.models : [];
+  const upstreamStatus = payload?.upstream_status;
+  const errorMessage =
+    payload?.success === false
+      ? getDisplayText(payload?.message) || tt('获取帐号信息失败')
+      : '';
+  const rawText =
+    typeof data === 'string' ? data : JSON.stringify(data ?? payload, null, 2);
+
+  return (
+    <div className='flex flex-col gap-4'>
+      {errorMessage && (
+        <div className='rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700'>
+          {errorMessage}
+        </div>
+      )}
+
+      <div className='rounded-xl border border-semi-color-border bg-semi-color-bg-0 p-3'>
+        <div className='flex flex-wrap items-start justify-between gap-2'>
+          <div className='min-w-0'>
+            <div className='text-xs font-medium text-semi-color-text-2'>
+              {tt('Claude Code 账号')}
+            </div>
+            <div className='mt-2 flex flex-wrap items-center gap-2'>
+              <Tag color='indigo' type='light' shape='circle' size='large'>
+                Claude Code
+              </Tag>
+              {renderClaudeCodeAuthTag(tt, data)}
+              <Tag color='grey' type='light' shape='circle'>
+                {tt('上游状态码：')}
+                {upstreamStatus ?? '-'}
+              </Tag>
+            </div>
+          </div>
+          <Button
+            size='small'
+            type='tertiary'
+            theme='outline'
+            onClick={onRefresh}
+          >
+            {tt('刷新')}
+          </Button>
+        </div>
+
+        <div className='mt-2 rounded-lg bg-semi-color-fill-0 px-3 py-2'>
+          <Descriptions>
+            <Descriptions.Item itemKey={tt('邮箱')}>
+              <AccountInfoValue
+                t={tt}
+                value={authStatus?.email}
+                onCopy={onCopy}
+              />
+            </Descriptions.Item>
+            <Descriptions.Item itemKey='CLI'>
+              <AccountInfoValue
+                t={tt}
+                value={data?.cli}
+                onCopy={onCopy}
+                monospace={true}
+              />
+            </Descriptions.Item>
+            <Descriptions.Item itemKey={tt('状态')}>
+              <AccountInfoValue
+                t={tt}
+                value={authStatus?.summary || data?.message || data?.status}
+                onCopy={onCopy}
+              />
+            </Descriptions.Item>
+          </Descriptions>
+        </div>
+
+        <div className='mt-2 text-xs text-semi-color-text-2'>
+          {tt('渠道：')}
+          {record?.name || '-'} ({tt('编号：')}
+          {record?.id || '-'})
+        </div>
+      </div>
+
+      <section className='space-y-2'>
+        <div className='text-sm font-semibold text-semi-color-text-0'>
+          {tt('代理模型')}
+        </div>
+        <div className='flex flex-wrap gap-2'>
+          {models.length > 0 ? (
+            models.map((model) => (
+              <Tag key={model} color='light-blue' type='light' shape='circle'>
+                {model}
+              </Tag>
+            ))
+          ) : (
+            <Text type='tertiary' size='small'>
+              -
+            </Text>
+          )}
+        </div>
+      </section>
+
+      {outputLines.length > 0 ? (
+        <section className='space-y-2'>
+          <div className='text-sm font-semibold text-semi-color-text-0'>
+            {tt('认证状态输出')}
+          </div>
+          <pre className='max-h-[30vh] overflow-y-auto rounded-lg bg-semi-color-fill-0 p-3 text-xs text-semi-color-text-0'>
+            {outputLines.join('\n')}
+          </pre>
+        </section>
+      ) : null}
+
+      <Collapse
+        activeKey={showRawJson ? ['raw-json'] : []}
+        onChange={(activeKey) => {
+          const keys = Array.isArray(activeKey) ? activeKey : [activeKey];
+          setShowRawJson(keys.includes('raw-json'));
+        }}
+      >
+        <Collapse.Panel header={tt('原始 JSON')} itemKey='raw-json'>
+          <div className='mb-2 flex justify-end'>
+            <Button
+              size='small'
+              type='primary'
+              theme='outline'
+              onClick={() => onCopy?.(rawText)}
+              disabled={!rawText}
+            >
+              {tt('复制')}
+            </Button>
+          </div>
+          <pre className='max-h-[50vh] overflow-y-auto rounded-lg bg-semi-color-fill-0 p-3 text-xs text-semi-color-text-0'>
+            {rawText}
+          </pre>
+        </Collapse.Panel>
+      </Collapse>
+    </div>
+  );
+};
+
+const ChannelAccountInfoLoader = ({ t, record, initialPayload, onCopy }) => {
   const tt = typeof t === 'function' ? t : (v) => v;
   const [loading, setLoading] = useState(!initialPayload);
   const [payload, setPayload] = useState(initialPayload ?? null);
   const hasShownErrorRef = useRef(false);
   const mountedRef = useRef(true);
   const recordId = record?.id;
+  const accountInfoKind = getChannelAccountInfoKind(record);
+  const endpoint =
+    accountInfoKind === 'claude-code'
+      ? `/api/channel/${recordId}/claude-code/account`
+      : `/api/channel/${recordId}/codex/usage`;
 
   const fetchUsage = useCallback(async () => {
-    if (!recordId) {
+    if (!recordId || !accountInfoKind) {
       if (mountedRef.current) setPayload(null);
       return;
     }
 
     if (mountedRef.current) setLoading(true);
     try {
-      const res = await API.get(`/api/channel/${recordId}/codex/usage`, {
+      const res = await API.get(endpoint, {
         skipErrorHandler: true,
       });
       if (!mountedRef.current) return;
       setPayload(res?.data ?? null);
       if (!res?.data?.success && !hasShownErrorRef.current) {
         hasShownErrorRef.current = true;
-        showError(tt('获取用量失败'));
+        showError(tt('获取帐号信息失败'));
       }
     } catch (error) {
       if (!mountedRef.current) return;
       if (!hasShownErrorRef.current) {
         hasShownErrorRef.current = true;
-        showError(tt('获取用量失败'));
+        showError(tt('获取帐号信息失败'));
       }
       setPayload({ success: false, message: String(error) });
     } finally {
       if (mountedRef.current) setLoading(false);
     }
-  }, [recordId, tt]);
+  }, [accountInfoKind, endpoint, recordId, tt]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -618,7 +788,7 @@ const CodexUsageLoader = ({ t, record, initialPayload, onCopy }) => {
   if (!payload) {
     return (
       <div className='flex flex-col gap-3'>
-        <Text type='danger'>{tt('获取用量失败')}</Text>
+        <Text type='danger'>{tt('获取帐号信息失败')}</Text>
         <div className='flex justify-end'>
           <Button
             size='small'
@@ -633,6 +803,18 @@ const CodexUsageLoader = ({ t, record, initialPayload, onCopy }) => {
     );
   }
 
+  if (accountInfoKind === 'claude-code') {
+    return (
+      <ClaudeCodeAccountInfoView
+        t={tt}
+        record={record}
+        payload={payload}
+        onCopy={onCopy}
+        onRefresh={fetchUsage}
+      />
+    );
+  }
+
   return (
     <CodexUsageView
       t={tt}
@@ -644,18 +826,23 @@ const CodexUsageLoader = ({ t, record, initialPayload, onCopy }) => {
   );
 };
 
-export const openCodexUsageModal = ({ t, record, payload, onCopy }) => {
+export const openChannelAccountInfoModal = ({ t, record, payload, onCopy }) => {
   const tt = typeof t === 'function' ? t : (v) => v;
   const layout = getCodexUsageModalLayout();
+  const accountInfoKind = getChannelAccountInfoKind(record);
+  const title =
+    accountInfoKind === 'claude-code'
+      ? tt('Claude Code 账号信息')
+      : tt('Codex 帐号与用量');
 
   Modal.info({
-    title: tt('Codex 帐号与用量'),
+    title,
     centered: false,
     width: layout.width,
     style: layout.style,
     bodyStyle: layout.bodyStyle,
     content: (
-      <CodexUsageLoader
+      <ChannelAccountInfoLoader
         t={tt}
         record={record}
         initialPayload={payload}
@@ -671,3 +858,5 @@ export const openCodexUsageModal = ({ t, record, payload, onCopy }) => {
     ),
   });
 };
+
+export const openCodexUsageModal = openChannelAccountInfoModal;
