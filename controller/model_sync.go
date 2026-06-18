@@ -250,7 +250,7 @@ func ensureVendorID(vendorName string, vendorByName map[string]upstreamVendor, v
 	v := &model.Vendor{
 		Name:        vendorName,
 		Description: uv.Description,
-		Icon:        coalesce(uv.Icon, ""),
+		Icon:        coalesce(uv.Icon, model.DefaultVendorIcon(vendorName)),
 		Status:      chooseStatus(uv.Status, 1),
 	}
 	if err := v.Insert(); err == nil {
@@ -260,6 +260,54 @@ func ensureVendorID(vendorName string, vendorByName map[string]upstreamVendor, v
 	}
 	vendorIDCache[vendorName] = 0
 	return 0
+}
+
+func syncTargetModelNames(missing []string, overwrite []overwriteField) []string {
+	seen := make(map[string]struct{}, len(missing)+len(overwrite))
+	names := make([]string, 0, len(missing)+len(overwrite))
+	for _, name := range missing {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	for _, ow := range overwrite {
+		name := strings.TrimSpace(ow.ModelName)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+
+func getPreferredSyncChannelTypes(modelNames []string) map[string]int {
+	channelTypes, err := model.GetPreferredModelOwnerChannelTypes(modelNames, nil)
+	if err != nil {
+		common.SysLog("failed to infer model owner channel types: " + err.Error())
+		return map[string]int{}
+	}
+	return channelTypes
+}
+
+func resolveSyncVendorName(modelName string, upstreamVendorName string, ownerChannelTypes map[string]int) string {
+	vendorName := strings.TrimSpace(upstreamVendorName)
+	if vendorName != "" {
+		return vendorName
+	}
+	if channelType, ok := ownerChannelTypes[modelName]; ok {
+		return model.InferDefaultVendorName(modelName, channelType)
+	}
+	return model.InferDefaultVendorName(modelName)
 }
 
 // SyncUpstreamModels 同步上游模型与供应商：
@@ -340,8 +388,9 @@ func SyncUpstreamModels(c *gin.Context) {
 			modelByName[m.ModelName] = m
 		}
 	}
+	ownerChannelTypes := getPreferredSyncChannelTypes(syncTargetModelNames(missing, req.Overwrite))
 
-	// 3) 执行同步：仅创建缺失模型；若上游缺失该模型则跳过
+	// 3) 执行同步：创建缺失模型；上游缺失时尝试使用默认供应商推断创建最小元数据
 	createdModels := 0
 	createdVendors := 0
 	updatedModels := 0
@@ -355,7 +404,24 @@ func SyncUpstreamModels(c *gin.Context) {
 	for _, name := range missing {
 		up, ok := modelByName[name]
 		if !ok {
-			skipped = append(skipped, name)
+			vendorName := resolveSyncVendorName(name, "", ownerChannelTypes)
+			if vendorName == "" {
+				skipped = append(skipped, name)
+				continue
+			}
+			vendorID := ensureVendorID(vendorName, vendorByName, vendorIDCache, &createdVendors)
+			mi := &model.Model{
+				ModelName: name,
+				VendorID:  vendorID,
+				Status:    1,
+				NameRule:  model.NameRuleExact,
+			}
+			if err := mi.Insert(); err == nil {
+				createdModels++
+				createdList = append(createdList, name)
+			} else {
+				skipped = append(skipped, name)
+			}
 			continue
 		}
 
@@ -369,7 +435,8 @@ func SyncUpstreamModels(c *gin.Context) {
 		}
 
 		// 确保 vendor 存在
-		vendorID := ensureVendorID(up.VendorName, vendorByName, vendorIDCache, &createdVendors)
+		vendorName := resolveSyncVendorName(name, up.VendorName, ownerChannelTypes)
+		vendorID := ensureVendorID(vendorName, vendorByName, vendorIDCache, &createdVendors)
 
 		// 创建模型
 		mi := &model.Model{
@@ -408,7 +475,8 @@ func SyncUpstreamModels(c *gin.Context) {
 			}
 
 			// 映射 vendor
-			newVendorID := ensureVendorID(up.VendorName, vendorByName, vendorIDCache, &createdVendors)
+			vendorName := resolveSyncVendorName(ow.ModelName, up.VendorName, ownerChannelTypes)
+			newVendorID := ensureVendorID(vendorName, vendorByName, vendorIDCache, &createdVendors)
 
 			// 应用字段覆盖（事务）
 			_ = model.DB.Transaction(func(tx *gorm.DB) error {
@@ -546,6 +614,7 @@ func SyncUpstreamPreview(c *gin.Context) {
 	if len(upstreamNames) > 0 {
 		_ = model.DB.Where("model_name IN ? AND sync_official <> 0", upstreamNames).Find(&locals).Error
 	}
+	ownerChannelTypes := getPreferredSyncChannelTypes(upstreamNames)
 
 	// 本地 vendor 名称映射
 	vendorIdSet := make(map[int]struct{})
@@ -605,8 +674,9 @@ func SyncUpstreamPreview(c *gin.Context) {
 		}
 		// vendor 对比使用名称
 		localVendor := idToVendorName[local.VendorID]
-		if strings.TrimSpace(localVendor) != strings.TrimSpace(up.VendorName) {
-			fields = append(fields, conflictField{Field: "vendor", Local: localVendor, Upstream: up.VendorName})
+		upstreamVendor := resolveSyncVendorName(local.ModelName, up.VendorName, ownerChannelTypes)
+		if strings.TrimSpace(localVendor) != strings.TrimSpace(upstreamVendor) {
+			fields = append(fields, conflictField{Field: "vendor", Local: localVendor, Upstream: upstreamVendor})
 		}
 		if local.NameRule != up.NameRule {
 			fields = append(fields, conflictField{Field: "name_rule", Local: local.NameRule, Upstream: up.NameRule})
