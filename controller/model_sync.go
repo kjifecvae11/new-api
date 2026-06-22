@@ -300,6 +300,9 @@ func getPreferredSyncChannelTypes(modelNames []string) map[string]int {
 }
 
 func resolveSyncVendorName(modelName string, upstreamVendorName string, ownerChannelTypes map[string]int) string {
+	if vendorName := model.InferDefaultVendorName(modelName); vendorName != "" {
+		return vendorName
+	}
 	vendorName := strings.TrimSpace(upstreamVendorName)
 	if vendorName != "" {
 		return vendorName
@@ -411,10 +414,11 @@ func SyncUpstreamModels(c *gin.Context) {
 			}
 			vendorID := ensureVendorID(vendorName, vendorByName, vendorIDCache, &createdVendors)
 			mi := &model.Model{
-				ModelName: name,
-				VendorID:  vendorID,
-				Status:    1,
-				NameRule:  model.NameRuleExact,
+				ModelName:    name,
+				VendorID:     vendorID,
+				Status:       1,
+				SyncOfficial: 1,
+				NameRule:     model.NameRuleExact,
 			}
 			if err := mi.Insert(); err == nil {
 				createdModels++
@@ -440,13 +444,14 @@ func SyncUpstreamModels(c *gin.Context) {
 
 		// 创建模型
 		mi := &model.Model{
-			ModelName:   name,
-			Description: up.Description,
-			Icon:        up.Icon,
-			Tags:        up.Tags,
-			VendorID:    vendorID,
-			Status:      chooseStatus(up.Status, 1),
-			NameRule:    up.NameRule,
+			ModelName:    name,
+			Description:  up.Description,
+			Icon:         up.Icon,
+			Tags:         up.Tags,
+			VendorID:     vendorID,
+			Status:       chooseStatus(up.Status, 1),
+			SyncOfficial: 1,
+			NameRule:     up.NameRule,
 		}
 		if err := mi.Insert(); err == nil {
 			createdModels++

@@ -119,5 +119,18 @@ func TestSyncUpstreamModelsCreatesDefaultVendorMetadataWhenUpstreamMissing(t *te
 	var meta model.Model
 	require.NoError(t, db.Where("model_name = ?", "private-deployment").First(&meta).Error)
 	require.Equal(t, vendor.Id, meta.VendorID)
+	require.Equal(t, 1, meta.SyncOfficial)
 	require.Equal(t, model.NameRuleExact, meta.NameRule)
+}
+
+func TestResolveSyncVendorNamePrefersIntrinsicModelVendor(t *testing.T) {
+	ownerChannelTypes := map[string]int{
+		"private-deployment": constant.ChannelTypeCodex,
+	}
+
+	require.Equal(t, "OpenAI", resolveSyncVendorName("gpt-5.5", "Vivgrid", nil))
+	require.Equal(t, "OpenAI", resolveSyncVendorName("gpt-5.3-codex-spark", "OpenCode Zen", nil))
+	require.Equal(t, "Anthropic", resolveSyncVendorName("claude-sonnet-4-5", "302.AI", nil))
+	require.Equal(t, "Vivgrid", resolveSyncVendorName("private-deployment", "Vivgrid", ownerChannelTypes))
+	require.Equal(t, "OpenAI", resolveSyncVendorName("private-deployment", "", ownerChannelTypes))
 }

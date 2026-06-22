@@ -663,8 +663,18 @@ func validateTestResponseBody(respBody []byte, isStream bool) error {
 	return nil
 }
 
-func shouldUseStreamForAutomaticChannelTest(channel *model.Channel) bool {
+func shouldUseStreamForChannelTest(channel *model.Channel) bool {
 	return channel != nil && channel.Type == constant.ChannelTypeCodex
+}
+
+func resolveChannelTestStream(c *gin.Context, channel *model.Channel) bool {
+	if c != nil {
+		if streamValue, exists := c.GetQuery("stream"); exists {
+			isStream, _ := strconv.ParseBool(streamValue)
+			return isStream
+		}
+	}
+	return shouldUseStreamForChannelTest(channel)
 }
 
 func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
@@ -850,7 +860,7 @@ func TestChannel(c *gin.Context) {
 	//}()
 	testModel := c.Query("model")
 	endpointType := c.Query("endpoint_type")
-	isStream, _ := strconv.ParseBool(c.Query("stream"))
+	isStream := resolveChannelTestStream(c, channel)
 	testUserID, err := resolveChannelTestUserID(c)
 	if err != nil {
 		common.ApiError(c, err)
@@ -928,7 +938,7 @@ func testAllChannels(notify bool) error {
 			}
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 			tik := time.Now()
-			result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+			result := testChannel(channel, testUserID, "", "", shouldUseStreamForChannelTest(channel))
 			tok := time.Now()
 			milliseconds := tok.Sub(tik).Milliseconds()
 
