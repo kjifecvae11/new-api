@@ -38,6 +38,7 @@ func FetchCodexWhamUsage(
 	req.Header.Set("Authorization", "Bearer "+at)
 	req.Header.Set("chatgpt-account-id", aid)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "codex-cli")
 	if req.Header.Get("originator") == "" {
 		req.Header.Set("originator", "codex_cli_rs")
 	}

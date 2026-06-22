@@ -442,9 +442,50 @@ const VENDOR_LABELS: Record<ModelVendor, string> = {
   unknown: 'Unknown',
 }
 
+const BACKEND_VENDOR_ALIASES: Array<[string, ModelVendor]> = [
+  ['openai', 'openai'],
+  ['anthropic', 'anthropic'],
+  ['claude', 'anthropic'],
+  ['google', 'google'],
+  ['gemini', 'google'],
+  ['meta', 'meta'],
+  ['mistral', 'mistral'],
+  ['alibaba', 'qwen'],
+  ['qwen', 'qwen'],
+  ['阿里巴巴', 'qwen'],
+  ['deepseek', 'deepseek'],
+  ['xai', 'xai'],
+  ['x.ai', 'xai'],
+  ['cohere', 'cohere'],
+  ['baidu', 'baidu'],
+  ['百度', 'baidu'],
+  ['zhipu', 'zhipu'],
+  ['智谱', 'zhipu'],
+  ['moonshot', 'moonshot'],
+  ['minimax', 'minimax'],
+  ['tencent', 'tencent'],
+  ['腾讯', 'tencent'],
+  ['bytedance', 'bytedance'],
+  ['字节跳动', 'bytedance'],
+  ['midjourney', 'midjourney'],
+  ['stability', 'stability'],
+]
+
+function detectBackendVendor(label?: string): ModelVendor | undefined {
+  const normalized = label?.trim().toLowerCase()
+  if (!normalized) return undefined
+  return BACKEND_VENDOR_ALIASES.find(([fragment]) =>
+    normalized.includes(fragment)
+  )?.[1]
+}
+
 function detectVendor(name: string): ModelVendor {
   const n = name.toLowerCase()
-  if (/^gpt|^o[1-4]|davinci|babbage|whisper|tts|dall.?e|sora|^omni/.test(n))
+  if (
+    /^gpt|^codex|codex|^o[1-4]|davinci|babbage|whisper|tts|dall.?e|sora|^omni/.test(
+      n
+    )
+  )
     return 'openai'
   if (/claude/.test(n)) return 'anthropic'
   if (/gemini|gemma|imagen|veo|palm/.test(n)) return 'google'
@@ -550,14 +591,17 @@ const HOMEPAGE_BY_VENDOR: Partial<Record<ModelVendor, string>> = {
  * stable.
  */
 export function inferApiInfo(model: PricingModel): ApiInfo {
-  const vendor = detectVendor(model.model_name || '')
+  const backendVendorLabel = model.vendor_name?.trim()
+  const vendor =
+    detectBackendVendor(backendVendorLabel) ??
+    detectVendor(model.model_name || '')
   const tk = inferTokenizer(model, vendor)
   const license = LICENSE_BY_VENDOR[vendor]
   const rand = seededRandom(hashStringToSeed(`${model.model_name}:api`))
   const retention = vendor === 'openai' ? 30 : Math.round(rand() * 90)
   return {
     vendor,
-    vendor_label: VENDOR_LABELS[vendor],
+    vendor_label: backendVendorLabel || VENDOR_LABELS[vendor],
     tokenizer: tk.tokenizer,
     tokenizer_note: tk.note,
     license: license.license,

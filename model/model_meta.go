@@ -45,6 +45,8 @@ type Model struct {
 }
 
 func (mi *Model) Insert() error {
+	ApplyDefaultVendor(mi)
+
 	now := common.GetTimestamp()
 	mi.CreatedTime = now
 	mi.UpdatedTime = now

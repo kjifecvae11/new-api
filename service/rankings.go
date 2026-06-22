@@ -259,6 +259,12 @@ func modelMeta(modelName string, meta map[string]rankingModelMeta) rankingModelM
 	if item, ok := meta[modelName]; ok && item.vendor != "" {
 		return item
 	}
+	if vendor := model.InferDefaultVendorName(modelName); vendor != "" {
+		return rankingModelMeta{
+			vendor:     vendor,
+			vendorIcon: model.DefaultVendorIcon(vendor),
+		}
+	}
 	return rankingModelMeta{vendor: rankingUnknownVendor}
 }
 
