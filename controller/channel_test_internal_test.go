@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -79,4 +81,32 @@ func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 2, userID)
+}
+
+func TestResolveChannelTestStreamDefaultsCodexToStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	isStream := resolveChannelTestStream(ctx, &model.Channel{Type: constant.ChannelTypeCodex})
+
+	require.True(t, isStream)
+}
+
+func TestResolveChannelTestStreamRespectsExplicitFalse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest("GET", "/api/channel/test/1?stream=false", nil)
+
+	isStream := resolveChannelTestStream(ctx, &model.Channel{Type: constant.ChannelTypeCodex})
+
+	require.False(t, isStream)
+}
+
+func TestResolveChannelTestStreamDefaultsNonCodexToNonStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	isStream := resolveChannelTestStream(ctx, &model.Channel{Type: constant.ChannelTypeOpenAI})
+
+	require.False(t, isStream)
 }
