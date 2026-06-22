@@ -25,10 +25,24 @@ func buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP string)
 	return ctx
 }
 
+func cleanupChannelAffinityUsageCacheForTest(t *testing.T, ruleName, usingGroup, keyFP string) {
+	t.Helper()
+	entryKey := channelAffinityUsageCacheEntryKey(ruleName, usingGroup, keyFP)
+	if entryKey == "" {
+		return
+	}
+	cache := getChannelAffinityUsageCacheStatsCache()
+	_, _ = cache.DeleteMany([]string{entryKey})
+	t.Cleanup(func() {
+		_, _ = cache.DeleteMany([]string{entryKey})
+	})
+}
+
 func TestObserveChannelAffinityUsageCacheByRelayFormat_ClaudeMode(t *testing.T) {
-	ruleName := fmt.Sprintf("rule_%d", time.Now().UnixNano())
+	ruleName := fmt.Sprintf("%s_rule_%d", t.Name(), time.Now().UnixNano())
 	usingGroup := "default"
-	keyFP := fmt.Sprintf("fp_%d", time.Now().UnixNano())
+	keyFP := fmt.Sprintf("%s_fp_%d", t.Name(), time.Now().UnixNano())
+	cleanupChannelAffinityUsageCacheForTest(t, ruleName, usingGroup, keyFP)
 	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
 
 	usage := &dto.Usage{
@@ -53,9 +67,10 @@ func TestObserveChannelAffinityUsageCacheByRelayFormat_ClaudeMode(t *testing.T) 
 }
 
 func TestObserveChannelAffinityUsageCacheByRelayFormat_MixedMode(t *testing.T) {
-	ruleName := fmt.Sprintf("rule_%d", time.Now().UnixNano())
+	ruleName := fmt.Sprintf("%s_rule_%d", t.Name(), time.Now().UnixNano())
 	usingGroup := "default"
-	keyFP := fmt.Sprintf("fp_%d", time.Now().UnixNano())
+	keyFP := fmt.Sprintf("%s_fp_%d", t.Name(), time.Now().UnixNano())
+	cleanupChannelAffinityUsageCacheForTest(t, ruleName, usingGroup, keyFP)
 	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
 
 	openAIUsage := &dto.Usage{
@@ -83,9 +98,10 @@ func TestObserveChannelAffinityUsageCacheByRelayFormat_MixedMode(t *testing.T) {
 }
 
 func TestObserveChannelAffinityUsageCacheByRelayFormat_UnsupportedModeKeepsEmpty(t *testing.T) {
-	ruleName := fmt.Sprintf("rule_%d", time.Now().UnixNano())
+	ruleName := fmt.Sprintf("%s_rule_%d", t.Name(), time.Now().UnixNano())
 	usingGroup := "default"
-	keyFP := fmt.Sprintf("fp_%d", time.Now().UnixNano())
+	keyFP := fmt.Sprintf("%s_fp_%d", t.Name(), time.Now().UnixNano())
+	cleanupChannelAffinityUsageCacheForTest(t, ruleName, usingGroup, keyFP)
 	ctx := buildChannelAffinityStatsContextForTest(ruleName, usingGroup, keyFP)
 
 	usage := &dto.Usage{

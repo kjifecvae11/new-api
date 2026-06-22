@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -59,7 +60,7 @@ func GetCodexChannelUsage(c *gin.Context) {
 		return
 	}
 
-	client, err := service.NewProxyHttpClient(ch.GetSetting().Proxy)
+	client, err := service.NewNoReuseHttpClient(ch.GetSetting().Proxy)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -71,7 +72,7 @@ func GetCodexChannelUsage(c *gin.Context) {
 	statusCode, body, err := service.FetchCodexWhamUsage(ctx, client, ch.GetBaseURL(), accessToken, accountID)
 	if err != nil {
 		common.SysError("failed to fetch codex usage: " + err.Error())
-		c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取用量信息失败，请稍后重试"})
+		writeCodexUsageFetchError(c, err)
 		return
 	}
 
@@ -101,7 +102,7 @@ func GetCodexChannelUsage(c *gin.Context) {
 			statusCode, body, err = service.FetchCodexWhamUsage(ctx2, client, ch.GetBaseURL(), oauthKey.AccessToken, accountID)
 			if err != nil {
 				common.SysError("failed to fetch codex usage after refresh: " + err.Error())
-				c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取用量信息失败，请稍后重试"})
+				writeCodexUsageFetchError(c, err)
 				return
 			}
 		}
@@ -123,4 +124,26 @@ func GetCodexChannelUsage(c *gin.Context) {
 		resp["message"] = fmt.Sprintf("upstream status: %d", statusCode)
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+func writeCodexUsageFetchError(c *gin.Context, err error) {
+	detail := ""
+	if err != nil {
+		detail = common.MaskSensitiveInfo(strings.TrimSpace(err.Error()))
+	}
+
+	message := "获取用量信息失败，请检查容器网络或渠道代理后重试"
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(detail), "deadline exceeded") {
+		message = "获取用量信息失败：请求 Codex 用量端点超时，请检查容器网络或渠道代理"
+	} else if detail != "" {
+		message = "获取用量信息失败：" + detail
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":         false,
+		"message":         message,
+		"upstream_status": 0,
+		"error_type":      "request_error",
+		"error_detail":    detail,
+	})
 }
