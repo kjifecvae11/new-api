@@ -130,6 +130,39 @@ function DetailSection(props: {
   )
 }
 
+function CopyableTextBlock(props: {
+  label: string
+  value: string
+  copiedText: string | null
+  onCopy: (text: string) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className='space-y-1.5'>
+      <Label className='text-muted-foreground text-xs'>{props.label}</Label>
+      <div className='bg-background/60 relative min-w-0 overflow-hidden rounded border p-2'>
+        <Button
+          variant='ghost'
+          size='sm'
+          className='absolute top-1.5 right-1.5 h-5 w-5 p-0'
+          onClick={() => props.onCopy(props.value)}
+          title={t('Copy to clipboard')}
+          aria-label={t('Copy to clipboard')}
+        >
+          {props.copiedText === props.value ? (
+            <Check className='size-3 text-green-600' />
+          ) : (
+            <Copy className='size-3' />
+          )}
+        </Button>
+        <pre className='min-w-0 pr-6 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap sm:break-words'>
+          {props.value}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
 function formatRatio(ratio: number | undefined): string {
   if (ratio == null) return '-'
   return ratio.toFixed(4)
@@ -402,6 +435,8 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const details = props.log.content ?? ''
+  const requestContent = props.log.request_content ?? ''
+  const responseContent = props.log.response_content ?? ''
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
 
@@ -655,6 +690,27 @@ export function DetailsDialog(props: DetailsDialogProps) {
                     </div>
                   </div>
                 </div>
+              </DetailSection>
+            )}
+
+            {props.isAdmin && (requestContent || responseContent) && (
+              <DetailSection label={t('Chat Content')}>
+                {requestContent && (
+                  <CopyableTextBlock
+                    label={t('Request')}
+                    value={requestContent}
+                    copiedText={copiedText}
+                    onCopy={copyToClipboard}
+                  />
+                )}
+                {responseContent && (
+                  <CopyableTextBlock
+                    label={t('Response')}
+                    value={responseContent}
+                    copiedText={copiedText}
+                    onCopy={copyToClipboard}
+                  />
+                )}
               </DetailSection>
             )}
 

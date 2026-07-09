@@ -52,6 +52,8 @@ type Log struct {
 	Ip                string `json:"ip" gorm:"index;default:''"`
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
+	RequestContent    string `json:"request_content,omitempty" gorm:"type:text"`
+	ResponseContent   string `json:"response_content,omitempty" gorm:"type:text"`
 	Other             string `json:"other"`
 }
 
@@ -78,6 +80,8 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			delete(otherMap, "stream_status")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
+		logs[i].RequestContent = ""
+		logs[i].ResponseContent = ""
 		logs[i].Id = startIdx + i + 1
 	}
 }
@@ -217,6 +221,8 @@ type RecordConsumeLogParams struct {
 	IsStream         bool                   `json:"is_stream"`
 	Group            string                 `json:"group"`
 	Other            map[string]interface{} `json:"other"`
+	RequestContent   string                 `json:"-"`
+	ResponseContent  string                 `json:"-"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
@@ -229,11 +235,17 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	otherStr := common.MapToJsonStr(params.Other)
 	// 判断是否需要记录 IP
-	needRecordIp := false
+	needRecordIp := common.LogChatContentEnabled
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
 		if settingMap.RecordIpLog {
 			needRecordIp = true
 		}
+	}
+	requestContent := ""
+	responseContent := ""
+	if common.LogChatContentEnabled {
+		requestContent = common.TruncateLogChatContent(params.RequestContent)
+		responseContent = common.TruncateLogChatContent(params.ResponseContent)
 	}
 	log := &Log{
 		UserId:           userId,
@@ -259,6 +271,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		}(),
 		RequestId:         requestId,
 		UpstreamRequestId: upstreamRequestId,
+		RequestContent:    requestContent,
+		ResponseContent:   responseContent,
 		Other:             otherStr,
 	}
 	err := LOG_DB.Create(log).Error

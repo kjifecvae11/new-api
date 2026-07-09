@@ -168,7 +168,9 @@ type RelayInfo struct {
 	TieredBillingSnapshot *billingexpr.BillingSnapshot
 	BillingRequestInput   *billingexpr.RequestInput
 
-	Request dto.Request
+	Request         dto.Request
+	RequestContent  string
+	ResponseContent string
 
 	// RequestConversionChain records request format conversions in order, e.g.
 	// ["openai", "openai_responses"] or ["openai", "claude"].
@@ -509,6 +511,8 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 	if ok {
 		info.UserSetting = userSetting
 	}
+
+	info.CaptureRequestContent(c)
 
 	return info
 }

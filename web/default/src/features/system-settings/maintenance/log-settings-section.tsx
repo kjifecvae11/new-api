@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/form'
 import { Switch } from '@/components/ui/switch'
 import { DateTimePicker } from '@/components/datetime-picker'
+import { Input } from '@/components/ui/input'
 import { deleteLogsBefore } from '../api'
 import {
   SettingsControlGroup,
@@ -57,12 +58,14 @@ import { useUpdateOption } from '../hooks/use-update-option'
 
 const logSettingsSchema = z.object({
   LogConsumeEnabled: z.boolean(),
+  LogChatContentEnabled: z.boolean(),
+  LogChatContentMaxBytes: z.number().int().min(1),
 })
 
 type LogSettingsFormValues = z.infer<typeof logSettingsSchema>
 
 type LogSettingsSectionProps = {
-  defaultEnabled: boolean
+  defaultValues: LogSettingsFormValues
 }
 
 const HOURS_IN_DAY = 24
@@ -91,15 +94,13 @@ const quickSelectOptions = [
 ]
 
 export function LogSettingsSection({
-  defaultEnabled,
+  defaultValues,
 }: LogSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
   const form = useForm<LogSettingsFormValues>({
     resolver: zodResolver(logSettingsSchema),
-    defaultValues: {
-      LogConsumeEnabled: defaultEnabled,
-    },
+    defaultValues,
   })
 
   const [purgeDate, setPurgeDate] = useState<Date | undefined>(() =>
@@ -109,8 +110,8 @@ export function LogSettingsSection({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false)
 
   useEffect(() => {
-    form.reset({ LogConsumeEnabled: defaultEnabled })
-  }, [defaultEnabled, form])
+    form.reset(defaultValues)
+  }, [defaultValues, form])
 
   const purgeTimestamp = useMemo(() => {
     if (!purgeDate) return null
@@ -123,11 +124,36 @@ export function LogSettingsSection({
   }, [purgeDate])
 
   const onSubmit = async (values: LogSettingsFormValues) => {
-    if (values.LogConsumeEnabled === defaultEnabled) return
-    await updateOption.mutateAsync({
-      key: 'LogConsumeEnabled',
-      value: values.LogConsumeEnabled,
-    })
+    const updates: Array<{
+      key: keyof LogSettingsFormValues
+      value: boolean | number
+    }> = []
+    if (values.LogConsumeEnabled !== defaultValues.LogConsumeEnabled) {
+      updates.push({
+        key: 'LogConsumeEnabled',
+        value: values.LogConsumeEnabled,
+      })
+    }
+    if (
+      values.LogChatContentEnabled !== defaultValues.LogChatContentEnabled
+    ) {
+      updates.push({
+        key: 'LogChatContentEnabled',
+        value: values.LogChatContentEnabled,
+      })
+    }
+    if (
+      values.LogChatContentMaxBytes !== defaultValues.LogChatContentMaxBytes
+    ) {
+      updates.push({
+        key: 'LogChatContentMaxBytes',
+        value: values.LogChatContentMaxBytes,
+      })
+    }
+    if (updates.length === 0) return
+    for (const update of updates) {
+      await updateOption.mutateAsync(update)
+    }
   }
 
   const handleRequestCleanLogs = () => {
@@ -196,6 +222,53 @@ export function LogSettingsSection({
                 </FormControl>
                 <FormMessage />
               </SettingsSwitchItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='LogChatContentEnabled'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>{t('Record chat content')}</FormLabel>
+                  <FormDescription>
+                    {t('Store relay request and response content in usage logs.')}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+                <FormMessage />
+              </SettingsSwitchItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='LogChatContentMaxBytes'
+            render={({ field }) => (
+              <SettingsControlGroup>
+                <div className='space-y-1'>
+                  <FormLabel>{t('Chat content limit')}</FormLabel>
+                  <FormDescription>
+                    {t('Maximum stored bytes for each request or response field.')}
+                  </FormDescription>
+                </div>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={1}
+                    step={1024}
+                    value={field.value}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                </FormControl>
+                <FormMessage />
+              </SettingsControlGroup>
             )}
           />
 

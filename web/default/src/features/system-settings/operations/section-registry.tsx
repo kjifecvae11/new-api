@@ -26,6 +26,15 @@ import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
+const DEFAULT_LOG_CHAT_CONTENT_MAX_BYTES = 65536
+
+const normalizePositiveNumber = (value: unknown, fallback: number) => {
+  const numberValue = Number(value)
+  return Number.isInteger(numberValue) && numberValue > 0
+    ? numberValue
+    : fallback
+}
+
 const OPERATIONS_SECTIONS = [
   {
     id: 'behavior',
@@ -99,7 +108,14 @@ const OPERATIONS_SECTIONS = [
     titleKey: 'Log Maintenance',
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
-        defaultEnabled={Boolean(settings.LogConsumeEnabled)}
+        defaultValues={{
+          LogConsumeEnabled: Boolean(settings.LogConsumeEnabled),
+          LogChatContentEnabled: Boolean(settings.LogChatContentEnabled),
+          LogChatContentMaxBytes: normalizePositiveNumber(
+            settings.LogChatContentMaxBytes,
+            DEFAULT_LOG_CHAT_CONTENT_MAX_BYTES
+          ),
+        }}
       />
     ),
   },
