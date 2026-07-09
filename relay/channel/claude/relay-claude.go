@@ -949,6 +949,7 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)
+	info.SetResponseContent(claudeInfo.ResponseText.String())
 	return claudeInfo.Usage, nil
 }
 
@@ -993,6 +994,7 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 	}
 
 	service.IOCopyBytesGracefully(c, httpResp, responseData)
+	info.SetResponseContent(string(responseData))
 	return nil
 }
 
