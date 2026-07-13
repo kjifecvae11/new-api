@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
@@ -18,11 +19,13 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type LoginRequest struct {
@@ -99,6 +102,7 @@ func setupLogin(user *model.User, c *gin.Context) {
 	session.Set("role", user.Role)
 	session.Set("status", user.Status)
 	session.Set("group", user.Group)
+	session.Set("auth_version", common.SessionAuthVersion)
 	err := session.Save()
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserSessionSaveFailed)
@@ -135,6 +139,11 @@ func Logout(c *gin.Context) {
 	})
 }
 
+type RegisterRequest struct {
+	model.User
+	LegalConsentAccepted bool `json:"legal_consent_accepted"`
+}
+
 func Register(c *gin.Context) {
 	if !common.RegisterEnabled {
 		common.ApiErrorI18n(c, i18n.MsgUserRegisterDisabled)
@@ -144,10 +153,17 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserPasswordRegisterDisabled)
 		return
 	}
-	var user model.User
-	err := json.NewDecoder(c.Request.Body).Decode(&user)
+	var request RegisterRequest
+	err := json.NewDecoder(c.Request.Body).Decode(&request)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	user := request.User
+	legalSetting := system_setting.GetLegalSettings()
+	legalConsentRequired := strings.TrimSpace(legalSetting.UserAgreement) != "" || strings.TrimSpace(legalSetting.PrivacyPolicy) != ""
+	if legalConsentRequired && !request.LegalConsentAccepted {
+		common.ApiErrorMsg(c, "请先阅读并同意用户协议和隐私政策")
 		return
 	}
 	if err := common.Validate.Struct(&user); err != nil {
@@ -186,17 +202,29 @@ func Register(c *gin.Context) {
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
-	if err := cleanUser.Insert(inviterId); err != nil {
+	acceptedAt := time.Now().Unix()
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := cleanUser.InsertWithTx(tx, inviterId); err != nil {
+			return err
+		}
+		if legalConsentRequired {
+			return model.RecordUserLegalConsentWithTx(
+				tx,
+				cleanUser.Id,
+				"password_registration",
+				legalSetting.UserAgreement,
+				legalSetting.PrivacyPolicy,
+				acceptedAt,
+			)
+		}
+		return nil
+	}); err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	cleanUser.FinalizeOAuthUserCreation(inviterId)
 
-	// 获取插入后的用户ID
-	var insertedUser model.User
-	if err := model.DB.Where("username = ?", cleanUser.Username).First(&insertedUser).Error; err != nil {
-		common.ApiErrorI18n(c, i18n.MsgUserRegisterFailed)
-		return
-	}
+	insertedUser := cleanUser
 	// 生成默认令牌
 	if constant.GenerateDefaultToken {
 		key, err := common.GenerateKey()
@@ -813,7 +841,9 @@ func DeleteSelf(c *gin.Context) {
 		return
 	}
 
-	err := model.DeleteUserById(id)
+	verifiedAt := c.GetInt64("secure_verified_at")
+	verifiedMethod := c.GetString("secure_verified_method")
+	err := model.EraseUserByIDWithFreshProof(id, verifiedMethod, verifiedAt)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -823,6 +853,22 @@ func DeleteSelf(c *gin.Context) {
 		"message": "",
 	})
 	return
+}
+
+func ExportSelfData(c *gin.Context) {
+	id := c.GetInt("id")
+	export, err := model.ExportUserData(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=user-data-%d-%s.json", id, time.Now().UTC().Format("20060102")))
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    export,
+	})
 }
 
 func CreateUser(c *gin.Context) {
@@ -908,18 +954,18 @@ func ManageUser(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgUserCannotDeleteRootUser)
 			return
 		}
-		if err := user.Delete(); err != nil {
+		if err := model.EraseUserByID(user.Id); err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": err.Error(),
 			})
 			return
 		}
-		// 删除用户后，强制清理 Redis 中所有该用户令牌的缓存，
-		// 避免已缓存的令牌在 TTL 过期前仍能通过 TokenAuth 校验。
-		if err := model.InvalidateUserTokensCache(user.Id); err != nil {
-			common.SysLog(fmt.Sprintf("failed to invalidate tokens cache for user %d: %s", user.Id, err.Error()))
-		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "",
+		})
+		return
 	case "promote":
 		if myRole != common.RoleRootUser {
 			common.ApiErrorI18n(c, i18n.MsgUserAdminCannotPromote)

@@ -16,9 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Shield, Key, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { Download, Shield, Key, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { useDialogs } from '@/hooks/use-dialog'
+import { api } from '@/lib/api'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
@@ -44,6 +47,35 @@ export function ProfileSecurityCard({
 }: ProfileSecurityCardProps) {
   const { t } = useTranslation()
   const dialogs = useDialogs<DialogKey>()
+  const [exporting, setExporting] = useState(false)
+
+  const exportPersonalData = async () => {
+    setExporting(true)
+    try {
+      const response = await api.get('/api/user/self/export', {
+        disableDuplicate: true,
+      })
+      if (!response.data?.success) {
+        throw new Error(response.data?.message || 'Export failed')
+      }
+      const blob = new Blob([JSON.stringify(response.data.data, null, 2)], {
+        type: 'application/json;charset=utf-8',
+      })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `personal-data-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+      toast.success(t('Personal data exported'))
+    } catch {
+      toast.error(t('Failed to export personal data'))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -79,9 +111,17 @@ export function ProfileSecurityCard({
       variant: 'default' as const,
     },
     {
+      icon: Download,
+      title: exporting ? t('Exporting…') : t('Export Personal Data'),
+      description: t('Download a JSON copy without passwords or secret keys'),
+      action: exportPersonalData,
+      variant: 'default' as const,
+      disabled: exporting,
+    },
+    {
       icon: Trash2,
       title: t('Delete Account'),
-      description: t('Permanently delete your account and all data'),
+      description: t('Close the account and erase personal data'),
       action: () => dialogs.open('delete'),
       variant: 'destructive' as const,
     },
@@ -94,12 +134,13 @@ export function ProfileSecurityCard({
         description={t('Manage your security settings and account access')}
         icon={<Shield className='h-4 w-4' />}
       >
-        <div className='grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-3'>
+        <div className='grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-2 xl:grid-cols-4'>
           {securityActions.map((item) => (
             <button
               key={item.title}
               type='button'
               onClick={item.action}
+              disabled={item.disabled}
               className={`hover:bg-muted/50 flex items-center gap-3 rounded-lg border p-3 text-left transition-colors md:flex-col md:gap-2 md:p-4 md:text-center ${
                 item.variant === 'destructive'
                   ? 'border-destructive/30 hover:border-destructive/50 hover:bg-destructive/5'

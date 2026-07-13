@@ -38,8 +38,19 @@ func authHelper(c *gin.Context, minRole int) {
 	username := session.Get("username")
 	role := session.Get("role")
 	id := session.Get("id")
-	status := session.Get("status")
 	useAccessToken := false
+	usingSession := username != nil
+	if usingSession {
+		version, ok := session.Get("auth_version").(int)
+		if !ok || version != common.SessionAuthVersion {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": common.TranslateMessage(c, i18n.MsgAuthNotLoggedIn),
+			})
+			c.Abort()
+			return
+		}
+	}
 	if username == nil {
 		// Check access token
 		accessToken := c.Request.Header.Get("Authorization")
@@ -81,7 +92,6 @@ func authHelper(c *gin.Context, minRole int) {
 			username = user.Username
 			role = user.Role
 			id = user.Id
-			status = user.Status
 			useAccessToken = true
 		} else {
 			c.JSON(http.StatusOK, gin.H{
@@ -112,7 +122,8 @@ func authHelper(c *gin.Context, minRole int) {
 		return
 
 	}
-	if id != apiUserId {
+	authenticatedID, ok := id.(int)
+	if !ok || authenticatedID <= 0 || authenticatedID != apiUserId {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthUserIdMismatch),
@@ -120,7 +131,32 @@ func authHelper(c *gin.Context, minRole int) {
 		c.Abort()
 		return
 	}
-	if status.(int) == common.UserStatusDisabled {
+
+	// Cookie sessions contain only client-signed snapshots. Reload the account
+	// on every request so deletion, disablement, demotion, and identity changes
+	// performed by another administrator take effect immediately. This direct
+	// database read deliberately bypasses Redis user caches.
+	currentUser, err := model.GetUserById(authenticatedID, false)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": common.TranslateMessage(c, i18n.MsgAuthNotLoggedIn),
+			})
+		} else {
+			common.SysLog("authenticated user database verification failed: " + err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"success": false,
+				"message": common.TranslateMessage(c, i18n.MsgDatabaseError),
+			})
+		}
+		c.Abort()
+		return
+	}
+	username = currentUser.Username
+	role = currentUser.Role
+	id = currentUser.Id
+	if currentUser.Status != common.UserStatusEnabled {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthUserBanned),
@@ -128,7 +164,7 @@ func authHelper(c *gin.Context, minRole int) {
 		c.Abort()
 		return
 	}
-	if role.(int) < minRole {
+	if currentUser.Role < minRole {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege),
@@ -136,7 +172,7 @@ func authHelper(c *gin.Context, minRole int) {
 		c.Abort()
 		return
 	}
-	if !validUserInfo(username.(string), role.(int)) {
+	if !validUserInfo(currentUser.Username, currentUser.Role) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": common.TranslateMessage(c, i18n.MsgAuthUserInfoInvalid),
@@ -149,8 +185,8 @@ func authHelper(c *gin.Context, minRole int) {
 	c.Set("username", username)
 	c.Set("role", role)
 	c.Set("id", id)
-	c.Set("group", session.Get("group"))
-	c.Set("user_group", session.Get("group"))
+	c.Set("group", currentUser.Group)
+	c.Set("user_group", currentUser.Group)
 	c.Set("use_access_token", useAccessToken)
 
 	c.Next()
@@ -159,9 +195,16 @@ func authHelper(c *gin.Context, minRole int) {
 func TryUserAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		session := sessions.Default(c)
-		id := session.Get("id")
-		if id != nil {
-			c.Set("id", id)
+		id, idOK := session.Get("id").(int)
+		version, versionOK := session.Get("auth_version").(int)
+		if idOK && id > 0 && versionOK && version == common.SessionAuthVersion {
+			user, err := model.GetUserById(id, false)
+			if err == nil && user.Status == common.UserStatusEnabled {
+				c.Set("id", user.Id)
+				c.Set("username", user.Username)
+				c.Set("role", user.Role)
+				c.Set("group", user.Group)
+			}
 		}
 		c.Next()
 	}
@@ -195,9 +238,15 @@ func TokenOrUserAuth() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		// Try session auth first (dashboard users)
 		session := sessions.Default(c)
-		if id := session.Get("id"); id != nil {
-			if status, ok := session.Get("status").(int); ok && status == common.UserStatusEnabled {
-				c.Set("id", id)
+		id, idOK := session.Get("id").(int)
+		version, versionOK := session.Get("auth_version").(int)
+		if idOK && id > 0 && versionOK && version == common.SessionAuthVersion {
+			user, err := model.GetUserById(id, false)
+			if err == nil && user.Status == common.UserStatusEnabled {
+				c.Set("id", user.Id)
+				c.Set("username", user.Username)
+				c.Set("role", user.Role)
+				c.Set("group", user.Group)
 				c.Next()
 				return
 			}
@@ -247,17 +296,24 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 			return
 		}
 
-		userCache, err := model.GetUserCache(token.UserId)
+		currentUser, err := model.GetUserById(token.UserId, false)
 		if err != nil {
-			common.SysLog(fmt.Sprintf("TokenAuthReadOnly GetUserCache error for user %d: %v", token.UserId, err))
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": common.TranslateMessage(c, i18n.MsgDatabaseError),
-			})
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"success": false,
+					"message": common.TranslateMessage(c, i18n.MsgTokenInvalid),
+				})
+			} else {
+				common.SysLog(fmt.Sprintf("TokenAuthReadOnly user database verification failed for user %d: %v", token.UserId, err))
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"success": false,
+					"message": common.TranslateMessage(c, i18n.MsgDatabaseError),
+				})
+			}
 			c.Abort()
 			return
 		}
-		if userCache.Status != common.UserStatusEnabled {
+		if currentUser.Status != common.UserStatusEnabled {
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"message": common.TranslateMessage(c, i18n.MsgAuthUserBanned),
@@ -364,22 +420,27 @@ func TokenAuth() func(c *gin.Context) {
 			logger.LogDebug(c, "Client IP %s passed the token IP restrictions check", clientIp)
 		}
 
-		userCache, err := model.GetUserCache(token.UserId)
+		currentUser, err := model.GetUserById(token.UserId, false)
 		if err != nil {
-			common.SysLog(fmt.Sprintf("TokenAuth GetUserCache error for user %d: %v", token.UserId, err))
-			abortWithOpenAiMessage(c, http.StatusInternalServerError,
-				common.TranslateMessage(c, i18n.MsgDatabaseError))
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				abortWithOpenAiMessage(c, http.StatusUnauthorized,
+					common.TranslateMessage(c, i18n.MsgTokenInvalid))
+			} else {
+				common.SysLog(fmt.Sprintf("TokenAuth user database verification failed for user %d: %v", token.UserId, err))
+				abortWithOpenAiMessage(c, http.StatusInternalServerError,
+					common.TranslateMessage(c, i18n.MsgDatabaseError))
+			}
 			return
 		}
-		userEnabled := userCache.Status == common.UserStatusEnabled
+		userEnabled := currentUser.Status == common.UserStatusEnabled
 		if !userEnabled {
 			abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgAuthUserBanned))
 			return
 		}
 
-		userCache.WriteContext(c)
+		currentUser.ToBaseUser().WriteContext(c)
 
-		userGroup := userCache.Group
+		userGroup := currentUser.Group
 		tokenGroup := token.Group
 		if tokenGroup != "" {
 			// check common.UserUsableGroups[userGroup]

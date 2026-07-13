@@ -52,10 +52,18 @@ const AccountDeleteModal = ({
       <div className='space-y-4 py-4'>
         <Banner
           type='danger'
-          description={t('您正在删除自己的帐户，将清空所有数据且不可恢复')}
+          description={t(
+            '账户凭据和个人数据将被清除；依法需保留的结算记录仅保留去标识关联，操作不可恢复',
+          )}
           closeIcon={null}
           className='!rounded-lg'
         />
+
+        <Typography.Text type='tertiary' className='block text-xs'>
+          {t(
+            '自助删除还需要近期两步验证码或 Passkey 复核；未配置时请联系支持并走身份核验、双人复核人工流程。',
+          )}
+        </Typography.Text>
 
         <div>
           <Typography.Text strong className='block mb-2 text-red-600'>
