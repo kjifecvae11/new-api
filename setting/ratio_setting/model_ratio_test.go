@@ -48,6 +48,29 @@ func TestSuggestedPricingProfiles(t *testing.T) {
 	}
 }
 
+func TestGPT56CompletionRatios(t *testing.T) {
+	resetRatioSettingsForTest()
+
+	testCases := []struct {
+		name string
+		want float64
+	}{
+		{name: "gpt-5.6-sol", want: 6},
+		{name: "gpt-5.6-terra", want: 6},
+		{name: "gpt-5.6-luna", want: 6},
+	}
+
+	for _, tc := range testCases {
+		info := GetCompletionRatioInfo(tc.name)
+		if info.Ratio != tc.want {
+			t.Fatalf("unexpected completion ratio for %s: got %v want %v", tc.name, info.Ratio, tc.want)
+		}
+		if !info.Locked {
+			t.Fatalf("expected completion ratio for %s to be locked", tc.name)
+		}
+	}
+}
+
 func TestSuggestedFixedPriceProfiles(t *testing.T) {
 	resetRatioSettingsForTest()
 
