@@ -207,13 +207,29 @@ func TokenOrUserAuth() func(c *gin.Context) {
 	}
 }
 
+const newAPIKeyHeader = "X-NewAPI-Key"
+
+// relayTokenHeader lets an OpenAI-authenticated Codex client keep its ChatGPT
+// bearer token in Authorization while authenticating this gateway with a
+// separately issued NewAPI token. The dedicated gateway header takes
+// precedence only when it is non-empty, preserving existing clients.
+func relayTokenHeader(request *http.Request) string {
+	if request == nil {
+		return ""
+	}
+	if key := strings.TrimSpace(request.Header.Get(newAPIKeyHeader)); key != "" {
+		return key
+	}
+	return request.Header.Get("Authorization")
+}
+
 // TokenAuthReadOnly 宽松版本的令牌认证中间件，用于只读查询接口。
 // 只验证令牌 key 是否存在，不检查令牌状态、过期时间和额度。
 // 即使令牌已过期、已耗尽或已禁用，也允许访问。
 // 仍然检查用户是否被封禁。
 func TokenAuthReadOnly() func(c *gin.Context) {
 	return func(c *gin.Context) {
-		key := c.Request.Header.Get("Authorization")
+		key := relayTokenHeader(c.Request)
 		if key == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
@@ -311,7 +327,7 @@ func TokenAuth() func(c *gin.Context) {
 				c.Request.Header.Set("Authorization", "Bearer "+xGoogKey)
 			}
 		}
-		key := c.Request.Header.Get("Authorization")
+		key := relayTokenHeader(c.Request)
 		parts := make([]string, 0)
 		if strings.HasPrefix(key, "Bearer ") || strings.HasPrefix(key, "bearer ") {
 			key = strings.TrimSpace(key[7:])

@@ -12,7 +12,7 @@ var baseModelList = []string{
 	"gpt-5.4",
 }
 
-var ModelList = withCompactModelSuffix(baseModelList)
+var ModelList = lo.Uniq(append(withCompactModelSuffix(baseModelList), "gpt-image-2"))
 
 const ChannelName = "codex"
 

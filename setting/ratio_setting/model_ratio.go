@@ -291,6 +291,7 @@ var defaultModelPrice = map[string]float64{
 	"suno_music_open":                0.05,
 	"suno_lyrics":                    0.01,
 	"dall-e-3":                       0.04,
+	"gpt-image-2":                    0.211,
 	"imagen-3.0-generate-002":        0.03,
 	"black-forest-labs/flux-1.1-pro": 0.04,
 	"gpt-4-gizmo-*":                  0.1,
