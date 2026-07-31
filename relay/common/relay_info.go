@@ -97,7 +97,10 @@ type RelayInfo struct {
 	FirstResponseTime time.Time
 	isFirstResponse   bool
 	//SendLastReasoningResponse bool
-	IsStream               bool
+	IsStream bool
+	// ResponsesWebsocket distinguishes the Responses API WebSocket transport
+	// from both HTTP/SSE Responses and the separate Realtime API.
+	ResponsesWebsocket     bool
 	IsGeminiBatchEmbedding bool
 	IsPlayground           bool
 	UsePrice               bool
