@@ -147,7 +147,16 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		path = "/backend-api/codex/responses/compact"
 	}
-	return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, path, info.ChannelType), nil
+	baseURL := info.ChannelBaseUrl
+	if info.ResponsesWebsocket {
+		switch {
+		case strings.HasPrefix(baseURL, "https://"):
+			baseURL = "wss://" + strings.TrimPrefix(baseURL, "https://")
+		case strings.HasPrefix(baseURL, "http://"):
+			baseURL = "ws://" + strings.TrimPrefix(baseURL, "http://")
+		}
+	}
+	return relaycommon.GetFullRequestURL(baseURL, path, info.ChannelType), nil
 }
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
@@ -176,9 +185,10 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	req.Set("Authorization", "Bearer "+accessToken)
 	req.Set("chatgpt-account-id", accountID)
 
-	if req.Get("OpenAI-Beta") == "" {
-		req.Set("OpenAI-Beta", "responses=experimental")
-	}
+	// The ChatGPT Codex backend uses its own beta namespace. In particular,
+	// forwarding the public API's responses_websockets beta value makes the
+	// backend accept the upgrade and then close with 1011 on response.create.
+	req.Set("OpenAI-Beta", "responses=experimental")
 	if req.Get("originator") == "" {
 		req.Set("originator", "codex_cli_rs")
 	}

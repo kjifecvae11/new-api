@@ -78,6 +78,11 @@ func SetRelayRouter(router *gin.Engine) {
 		wsRouter.GET("/realtime", func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatOpenAIRealtime)
 		})
+		// Responses WebSocket mode receives the model in the first
+		// response.create frame, after the HTTP upgrade. Its handler performs
+		// channel selection at that point, so the HTTP-body distributor must
+		// not run during the handshake.
+		relayV1Router.GET("/responses", controller.RelayResponsesWebsocket)
 	}
 	{
 		//http router
