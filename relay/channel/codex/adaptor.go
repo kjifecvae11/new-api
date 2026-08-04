@@ -35,7 +35,10 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
-	return nil, errors.New("codex channel: endpoint not supported")
+	if info == nil || info.RelayMode != relayconstant.RelayModeImagesGenerations {
+		return nil, errors.New("codex channel: only /v1/images/generations is supported for images")
+	}
+	return request, nil
 }
 
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
@@ -121,6 +124,9 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	if info.RelayMode == relayconstant.RelayModeImagesGenerations {
+		return openai.OpenaiHandlerWithUsage(c, info, resp)
+	}
 	if info.RelayMode != relayconstant.RelayModeResponses && info.RelayMode != relayconstant.RelayModeResponsesCompact {
 		return nil, types.NewError(errors.New("codex channel: endpoint not supported"), types.ErrorCodeInvalidRequest)
 	}
@@ -144,14 +150,26 @@ func (a *Adaptor) GetChannelName() string {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if info.RelayMode == relayconstant.RelayModeImagesGenerations {
+		return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, "/backend-api/codex/images/generations", info.ChannelType), nil
+	}
 	if info.RelayMode != relayconstant.RelayModeResponses && info.RelayMode != relayconstant.RelayModeResponsesCompact {
-		return "", errors.New("codex channel: only /v1/responses and /v1/responses/compact are supported")
+		return "", errors.New("codex channel: only /v1/responses, /v1/responses/compact, and /v1/images/generations are supported")
 	}
 	path := "/backend-api/codex/responses"
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		path = "/backend-api/codex/responses/compact"
 	}
-	return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, path, info.ChannelType), nil
+	baseURL := info.ChannelBaseUrl
+	if info.ResponsesWebsocket {
+		switch {
+		case strings.HasPrefix(baseURL, "https://"):
+			baseURL = "wss://" + strings.TrimPrefix(baseURL, "https://")
+		case strings.HasPrefix(baseURL, "http://"):
+			baseURL = "ws://" + strings.TrimPrefix(baseURL, "http://")
+		}
+	}
+	return relaycommon.GetFullRequestURL(baseURL, path, info.ChannelType), nil
 }
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
@@ -180,14 +198,15 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	req.Set("Authorization", "Bearer "+accessToken)
 	req.Set("chatgpt-account-id", accountID)
 
-	if req.Get("OpenAI-Beta") == "" {
-		req.Set("OpenAI-Beta", "responses=experimental")
-	}
+	// The ChatGPT Codex backend uses its own beta namespace. In particular,
+	// forwarding the public API's responses_websockets beta value makes the
+	// backend accept the upgrade and then close with 1011 on response.create.
+	req.Set("OpenAI-Beta", "responses=experimental")
 	if req.Get("originator") == "" {
 		req.Set("originator", "codex_cli_rs")
 	}
 
-	// chatgpt.com/backend-api/codex/responses is strict about Content-Type.
+	// ChatGPT Codex endpoints are strict about Content-Type.
 	// Clients may omit it or include parameters like `application/json; charset=utf-8`,
 	// which can be rejected by the upstream. Force the exact media type.
 	req.Set("Content-Type", "application/json")

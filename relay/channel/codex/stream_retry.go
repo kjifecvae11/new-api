@@ -114,7 +114,7 @@ func probeCodexStreamResponse(resp *http.Response) (retry bool, reason string, e
 							return false, "", nil
 						}
 					case "response.output_text.done":
-						if event.Delta != "" {
+						if event.Text != "" || event.Delta != "" {
 							rebuildCodexStreamBody(resp, prefix.Bytes(), reader, originalBody)
 							return false, "", nil
 						}

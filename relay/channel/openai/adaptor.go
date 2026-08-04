@@ -95,7 +95,7 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
-	if info.RelayMode == relayconstant.RelayModeRealtime {
+	if info.RelayMode == relayconstant.RelayModeRealtime || info.ResponsesWebsocket {
 		if strings.HasPrefix(info.ChannelBaseUrl, "https://") {
 			baseUrl := strings.TrimPrefix(info.ChannelBaseUrl, "https://")
 			baseUrl = "wss://" + baseUrl
@@ -213,6 +213,11 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, header *http.Header, info *
 	} else {
 		if !hasAuthOverride {
 			header.Set("Authorization", "Bearer "+info.ApiKey)
+		}
+		if info.ResponsesWebsocket {
+			if beta := strings.TrimSpace(c.Request.Header.Get("OpenAI-Beta")); beta != "" {
+				header.Set("OpenAI-Beta", beta)
+			}
 		}
 	}
 	if info.ChannelType == constant.ChannelTypeOpenRouter {

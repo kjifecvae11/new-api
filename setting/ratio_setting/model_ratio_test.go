@@ -84,6 +84,7 @@ func TestSuggestedFixedPriceProfiles(t *testing.T) {
 		{name: "wan2.7-image-pro", wantPrice: 0.89},
 		{name: "suno_music", wantPrice: 0.05},
 		{name: "suno_music_open", wantPrice: 0.05},
+		{name: "gpt-image-2", wantPrice: 0.211},
 	}
 
 	for _, tc := range testCases {

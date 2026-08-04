@@ -120,3 +120,19 @@ func TestProbeCodexStreamResponseRetriesEmptyCompletion(t *testing.T) {
 		t.Fatalf("probeCodexStreamResponse() = (%v, %q), want (true, empty_completed_response)", retry, reason)
 	}
 }
+
+func TestProbeCodexStreamResponseAcceptsOutputTextDone(t *testing.T) {
+	body := "event: response.output_text.done\n" +
+		"data: {\"type\":\"response.output_text.done\",\"text\":\"OK\"}\n\n" +
+		"event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n"
+	resp := codexTestStreamResponse(body)
+
+	retry, reason, err := probeCodexStreamResponse(resp)
+	if err != nil {
+		t.Fatalf("probeCodexStreamResponse() error = %v", err)
+	}
+	if retry {
+		t.Fatalf("probeCodexStreamResponse() retry = true, reason = %q", reason)
+	}
+}

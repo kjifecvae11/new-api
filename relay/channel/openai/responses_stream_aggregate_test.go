@@ -25,8 +25,8 @@ func aggregateTestResponse(body string) *http.Response {
 }
 
 func TestAggregateResponsesStreamBuildsStandardResponseJSON(t *testing.T) {
-	body := "event: response.output_text.delta\n" +
-		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\n" +
+	body := "event: response.output_text.done\n" +
+		"data: {\"type\":\"response.output_text.done\",\"text\":\"OK\"}\n\n" +
 		"event: response.completed\n" +
 		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_test\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5.6-sol\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n"
 
@@ -113,8 +113,8 @@ func TestOaiResponsesStreamHandlerRepairsCompletedOutput(t *testing.T) {
 	context, _ := gin.CreateTestContext(recorder)
 	context.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 
-	body := "event: response.output_text.delta\n" +
-		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"OK\"}\n\n" +
+	body := "event: response.output_text.done\n" +
+		"data: {\"type\":\"response.output_text.done\",\"text\":\"OK\"}\n\n" +
 		"event: response.completed\n" +
 		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_test\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5.6-sol\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n"
 	resp := aggregateTestResponse(body)

@@ -123,6 +123,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		case "response.output_text.delta":
 			// 处理输出文本
 			responseTextBuilder.WriteString(streamResponse.Delta)
+		case "response.output_text.done":
+			if responseTextBuilder.Len() == 0 {
+				responseTextBuilder.WriteString(streamResponse.Text)
+			}
 		case dto.ResponsesOutputTypeItemDone:
 			// 函数调用处理
 			if streamResponse.Item != nil {
