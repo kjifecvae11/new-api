@@ -102,6 +102,10 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	}
 	// codex: store must be false
 	request.Store = json.RawMessage("false")
+	// The ChatGPT Codex backend only accepts streaming Responses requests.
+	// Non-streaming clients are served by aggregating the upstream SSE stream.
+	stream := true
+	request.Stream = &stream
 	// rm max_output_tokens
 	request.MaxOutputTokens = nil
 	request.Temperature = nil
@@ -113,7 +117,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if err != nil {
 		return nil, err
 	}
-	return channel.DoApiRequestWithClient(a, c, info, requestBody, client)
+	return doCodexRequestWithStreamRetry(a, c, info, requestBody, client)
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
@@ -128,7 +132,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	if info.IsStream {
 		return openai.OaiResponsesStreamHandler(c, info, resp)
 	}
-	return openai.OaiResponsesHandler(c, info, resp)
+	return openai.OaiResponsesStreamToResponseHandler(c, info, resp)
 }
 
 func (a *Adaptor) GetModelList() []string {
@@ -187,7 +191,7 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	// Clients may omit it or include parameters like `application/json; charset=utf-8`,
 	// which can be rejected by the upstream. Force the exact media type.
 	req.Set("Content-Type", "application/json")
-	if info.IsStream {
+	if info.RelayMode == relayconstant.RelayModeResponses || info.IsStream {
 		req.Set("Accept", "text/event-stream")
 	} else if req.Get("Accept") == "" {
 		req.Set("Accept", "application/json")

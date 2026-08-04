@@ -3,6 +3,7 @@ package controller
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,18 @@ func TestNormalizeModelNames(t *testing.T) {
 	})
 
 	require.Equal(t, []string{"gpt-4o", "gpt-4.1"}, result)
+}
+
+func TestFetchChannelUpstreamModelIDsCodexUsesConfiguredSnapshot(t *testing.T) {
+	channel := &model.Channel{
+		Type:   constant.ChannelTypeCodex,
+		Models: "gpt-5.5, gpt-5.6-sol,gpt-5.5",
+	}
+
+	result, err := fetchChannelUpstreamModelIDs(channel)
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"gpt-5.5", "gpt-5.6-sol"}, result)
 }
 
 func TestMergeModelNames(t *testing.T) {

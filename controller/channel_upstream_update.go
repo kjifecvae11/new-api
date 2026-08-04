@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -263,6 +264,18 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 	baseURL := constant.ChannelBaseURLs[channel.Type]
 	if channel.GetBaseURL() != "" {
 		baseURL = channel.GetBaseURL()
+	}
+
+	if channel.Type == constant.ChannelTypeCodex {
+		// ChatGPT/Codex OAuth credentials can use the Codex Responses backend
+		// but are rejected by the regular OpenAI /v1/models endpoint. Codex
+		// channels are provisioned from the account-scoped Codex CLI model cache,
+		// so their configured model set is the durable discovery snapshot.
+		models := normalizeModelNames(channel.GetModels())
+		if len(models) == 0 {
+			return nil, errors.New("Codex channel has no configured model snapshot")
+		}
+		return models, nil
 	}
 
 	if channel.Type == constant.ChannelTypeOllama {
