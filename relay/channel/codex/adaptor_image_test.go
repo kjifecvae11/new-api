@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -66,5 +67,66 @@ func TestCodexModelListIncludesImageGenerationWithoutCompactAlias(t *testing.T) 
 	}
 	if !containsImageModel {
 		t.Fatal("gpt-image-2 missing from Codex model list")
+	}
+}
+
+func TestCodexResponsesImageToolNormalizesStringInput(t *testing.T) {
+	adaptor := &Adaptor{}
+	stream := false
+	request := dto.OpenAIResponsesRequest{
+		Model:  "gpt-5.4-mini",
+		Input:  json.RawMessage(`"draw a blue circle"`),
+		Stream: &stream,
+		Tools:  json.RawMessage(`[{"type":"image_generation"}]`),
+	}
+
+	converted, err := adaptor.ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{
+		RelayMode:   relayconstant.RelayModeResponses,
+		ChannelMeta: &relaycommon.ChannelMeta{},
+	}, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := converted.(dto.OpenAIResponsesRequest)
+	if !ok {
+		t.Fatalf("unexpected converted request: %#v", converted)
+	}
+
+	var inputItems []struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(got.Input, &inputItems); err != nil {
+		t.Fatalf("normalized input is not an item list: %v", err)
+	}
+	if len(inputItems) != 1 || inputItems[0].Role != "user" || inputItems[0].Content != "draw a blue circle" {
+		t.Fatalf("unexpected normalized input: %#v", inputItems)
+	}
+	if got.Stream == nil || !*got.Stream {
+		t.Fatal("Codex Responses transport must still force streaming")
+	}
+	if string(got.Tools) != string(request.Tools) {
+		t.Fatalf("image generation tool changed: %s", got.Tools)
+	}
+}
+
+func TestCodexResponsesImageToolPreservesItemListInput(t *testing.T) {
+	adaptor := &Adaptor{}
+	request := dto.OpenAIResponsesRequest{
+		Model: "gpt-5.4-mini",
+		Input: json.RawMessage(`[{"role":"user","content":"draw a blue circle"}]`),
+		Tools: json.RawMessage(`[{"type":"image_generation"}]`),
+	}
+
+	converted, err := adaptor.ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{
+		RelayMode:   relayconstant.RelayModeResponses,
+		ChannelMeta: &relaycommon.ChannelMeta{},
+	}, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := converted.(dto.OpenAIResponsesRequest)
+	if string(got.Input) != string(request.Input) {
+		t.Fatalf("item-list input changed: %s", got.Input)
 	}
 }

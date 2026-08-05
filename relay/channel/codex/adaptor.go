@@ -59,6 +59,27 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
 	isCompact := info != nil && info.RelayMode == relayconstant.RelayModeResponsesCompact
 
+	// The public Responses API accepts a plain string for `input`, while the
+	// ChatGPT Codex backend requires an input-item list. Normalize the public
+	// shorthand at the server boundary so API-key clients can use official SDK
+	// examples, including the image_generation tool, without handling the
+	// private Codex transport shape themselves.
+	if len(request.Input) > 0 {
+		var inputText string
+		if err := common.Unmarshal(request.Input, &inputText); err == nil {
+			normalizedInput, err := common.Marshal([]map[string]any{
+				{
+					"role":    "user",
+					"content": inputText,
+				},
+			})
+			if err != nil {
+				return nil, err
+			}
+			request.Input = normalizedInput
+		}
+	}
+
 	if info != nil && info.ChannelSetting.SystemPrompt != "" {
 		systemPrompt := info.ChannelSetting.SystemPrompt
 
