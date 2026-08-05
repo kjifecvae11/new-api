@@ -34,6 +34,10 @@ func IsRequestBodyTooLargeError(err error) bool {
 }
 
 func GetRequestBody(c *gin.Context) (io.Seeker, error) {
+	if c == nil {
+		return nil, errors.New("gin context is nil")
+	}
+
 	// 首先检查是否有 BodyStorage 缓存
 	if storage, exists := c.Get(KeyBodyStorage); exists && storage != nil {
 		if bs, ok := storage.(BodyStorage); ok {
@@ -55,6 +59,10 @@ func GetRequestBody(c *gin.Context) (io.Seeker, error) {
 			c.Set(KeyBodyStorage, bs)
 			return bs, nil
 		}
+	}
+
+	if c.Request == nil || c.Request.Body == nil {
+		return nil, errors.New("request body is unavailable")
 	}
 
 	maxMB := constant.MaxRequestBodyMB
