@@ -130,3 +130,96 @@ func TestCodexResponsesImageToolPreservesItemListInput(t *testing.T) {
 		t.Fatalf("item-list input changed: %s", got.Input)
 	}
 }
+
+func TestCodexResponsesAutomaticallyOffersImageGeneration(t *testing.T) {
+	adaptor := &Adaptor{}
+	request := dto.OpenAIResponsesRequest{
+		Model: "gpt-5.4-mini",
+		Input: json.RawMessage(`[{"role":"user","content":"generate a station banner"}]`),
+	}
+
+	converted, err := adaptor.ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{
+		RelayMode:   relayconstant.RelayModeResponses,
+		ChannelMeta: &relaycommon.ChannelMeta{},
+	}, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := converted.(dto.OpenAIResponsesRequest)
+
+	var tools []map[string]any
+	if err := json.Unmarshal(got.Tools, &tools); err != nil {
+		t.Fatalf("injected tools are invalid: %v", err)
+	}
+	if len(tools) != 1 || tools[0]["type"] != imageGenerationToolType {
+		t.Fatalf("image generation tool was not injected: %#v", tools)
+	}
+}
+
+func TestCodexResponsesAppendsImageGenerationToExistingTools(t *testing.T) {
+	adaptor := &Adaptor{}
+	request := dto.OpenAIResponsesRequest{
+		Model:      "gpt-5.4-mini",
+		Input:      json.RawMessage(`[{"role":"user","content":"generate a station banner"}]`),
+		Tools:      json.RawMessage(`[{"type":"function","name":"existing_tool","parameters":{"type":"object"}}]`),
+		ToolChoice: json.RawMessage(`"auto"`),
+	}
+
+	converted, err := adaptor.ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{
+		RelayMode:   relayconstant.RelayModeResponses,
+		ChannelMeta: &relaycommon.ChannelMeta{},
+	}, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := converted.(dto.OpenAIResponsesRequest)
+
+	var tools []map[string]any
+	if err := json.Unmarshal(got.Tools, &tools); err != nil {
+		t.Fatalf("injected tools are invalid: %v", err)
+	}
+	if len(tools) != 2 || tools[0]["name"] != "existing_tool" || tools[1]["type"] != imageGenerationToolType {
+		t.Fatalf("existing tools were not preserved: %#v", tools)
+	}
+	if string(got.ToolChoice) != string(request.ToolChoice) {
+		t.Fatalf("tool choice changed: %s", got.ToolChoice)
+	}
+}
+
+func TestCodexResponsesDoesNotDuplicateImageGeneration(t *testing.T) {
+	raw := json.RawMessage(`[{"type":"image_generation","quality":"low"}]`)
+	got, err := ensureImageGenerationTool(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(raw) {
+		t.Fatalf("existing image tool changed: %s", got)
+	}
+}
+
+func TestCodexResponsesCompactDoesNotInjectImageGeneration(t *testing.T) {
+	adaptor := &Adaptor{}
+	request := dto.OpenAIResponsesRequest{
+		Model: "gpt-5.4-mini",
+		Input: json.RawMessage(`[{"role":"user","content":"compact this"}]`),
+	}
+
+	converted, err := adaptor.ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{
+		RelayMode:   relayconstant.RelayModeResponsesCompact,
+		ChannelMeta: &relaycommon.ChannelMeta{},
+	}, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := converted.(dto.OpenAIResponsesRequest)
+	if len(got.Tools) != 0 {
+		t.Fatalf("compact request received image tool: %s", got.Tools)
+	}
+}
+
+func TestCodexResponsesRejectsMalformedToolsBeforeRelay(t *testing.T) {
+	_, err := ensureImageGenerationTool(json.RawMessage(`{"type":"function"}`))
+	if err == nil || !strings.Contains(err.Error(), "invalid Responses tools") {
+		t.Fatalf("expected invalid tools error, got %v", err)
+	}
+}
