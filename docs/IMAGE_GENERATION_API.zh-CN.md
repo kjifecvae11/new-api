@@ -13,7 +13,7 @@
 | 场景 | 接口 | 图片 Base64 位置 |
 | --- | --- | --- |
 | 根据提示词直接生成图片 | `POST /v1/images/generations` | `data[].b64_json` |
-| 智能体理解上下文后生成图片 | `POST /v1/responses` + `image_generation` | `output[].result` |
+| 智能体理解上下文后生成图片 | `POST /v1/responses`（服务端自动提供 `image_generation`） | `output[].result` |
 
 ## Images API
 
@@ -77,7 +77,9 @@ with open("tram.png", "wb") as image_file:
 
 ## Responses API 图片工具
 
-Responses API 适合 Codex 或其他智能体。文字模型请先通过 `/v1/models` 确认可用，示例模型不是固定默认值。
+Responses API 适合 Codex 或其他智能体。对于走 Codex OAuth 渠道的普通响应请求，服务端会在不修改用户 Key 和客户端配置的情况下自动补充 `image_generation` 工具；模型根据自然语言自行决定是否生成图片。客户端原有工具和 `tool_choice` 会保留，已经声明图片工具时也不会重复添加。
+
+因此，已经把模型请求指向 `https://ainiubi.org/v1` 的现有用户只需像原来一样发送自然语言，不需要增加 `tools` 字段：
 
 ```bash
 curl https://ainiubi.org/v1/responses \
@@ -85,15 +87,11 @@ curl https://ainiubi.org/v1/responses \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-5.4-mini",
-    "input": "生成一张现代化中转站控制中心的横版图片，不要文字",
-    "tools": [{
-      "type": "image_generation",
-      "size": "1536x1024",
-      "quality": "low",
-      "output_format": "png"
-    }]
+    "input": "生成一张现代化中转站控制中心的横版图片，不要文字"
   }'
 ```
+
+文字模型请先通过 `/v1/models` 确认可用，示例模型不是固定默认值。需要指定尺寸、质量等高级选项时，客户端仍可显式传入 `tools: [{"type":"image_generation", ...}]`，服务端会原样保留。
 
 从输出中找到 `type` 为 `image_generation_call` 的项目，将其 `result` 字段做 Base64 解码：
 
@@ -109,7 +107,6 @@ client = OpenAI(
 response = client.responses.create(
     model="gpt-5.4-mini",
     input="生成一张现代化中转站控制中心的横版图片，不要文字",
-    tools=[{"type": "image_generation", "quality": "low"}],
 )
 image_call = next(
     item for item in response.output
@@ -135,7 +132,9 @@ requires_openai_auth = true
 env_http_headers = { "X-NewAPI-Key" = "NEWAPI_KEY" }
 ```
 
-如果客户端无法配置额外请求头，可让智能体通过脚本或 HTTP 工具直接调用 Images API。Codex 产品内置图片工具可能使用产品自己的认证链路，不等同于自定义 NewAPI provider；需要确定走 NewAPI Key 和服务端 OAuth 时，应使用本文的标准 API、脚本或自定义工具。
+已经使用 `https://ainiubi.org/v1` 和原有 NewAPI Key 的用户不需要修改配置。直接对 Codex 说“生成一张……图片”即可；到达 `/v1/responses` 的请求会由服务端获得图片工具，生成结果通过标准 Responses 事件返回。普通 Bearer Key 客户端继续使用原来的 `Authorization`，无需改成 `X-NewAPI-Key`。
+
+Codex 产品自身的内置图片功能可能使用独立的 ChatGPT 认证链路；本服务保证的是所有到达 `ainiubi.org/v1/responses` 的 Codex 渠道请求自动具备图片生成能力。
 
 ## 使用规范
 

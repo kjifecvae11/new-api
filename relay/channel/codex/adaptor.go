@@ -3,6 +3,7 @@ package codex
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -20,6 +21,36 @@ import (
 )
 
 type Adaptor struct {
+}
+
+const imageGenerationToolType = "image_generation"
+
+// ensureImageGenerationTool makes the hosted image tool available to every
+// regular Codex Responses request. Existing API-key clients do not need to
+// change their request body: the model can decide whether an image is needed,
+// while explicit tool_choice values and all client-provided tools are kept.
+func ensureImageGenerationTool(rawTools json.RawMessage) (json.RawMessage, error) {
+	trimmed := strings.TrimSpace(string(rawTools))
+	if trimmed == "" || trimmed == "null" {
+		return json.RawMessage(`[{"type":"image_generation"}]`), nil
+	}
+
+	var tools []map[string]any
+	if err := common.Unmarshal(rawTools, &tools); err != nil {
+		return nil, fmt.Errorf("codex channel: invalid Responses tools: %w", err)
+	}
+	for _, tool := range tools {
+		if toolType, _ := tool["type"].(string); toolType == imageGenerationToolType {
+			return rawTools, nil
+		}
+	}
+
+	tools = append(tools, map[string]any{"type": imageGenerationToolType})
+	encoded, err := common.Marshal(tools)
+	if err != nil {
+		return nil, fmt.Errorf("codex channel: append image generation tool: %w", err)
+	}
+	return encoded, nil
 }
 
 func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
@@ -124,6 +155,16 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	if isCompact {
 		return request, nil
 	}
+
+	// The upstream hosted tool performs generation with the server-side Codex
+	// OAuth credential and returns image_generation_call.result as Base64. This
+	// keeps the user's existing NewAPI key and client request unchanged.
+	tools, err := ensureImageGenerationTool(request.Tools)
+	if err != nil {
+		return nil, err
+	}
+	request.Tools = tools
+
 	// codex: store must be false
 	request.Store = json.RawMessage("false")
 	// The ChatGPT Codex backend only accepts streaming Responses requests.

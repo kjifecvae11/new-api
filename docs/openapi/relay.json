@@ -249,7 +249,7 @@
       "post": {
         "summary": "创建响应 (OpenAI Responses API)",
         "deprecated": false,
-        "description": "OpenAI Responses API，用于创建模型响应。\n支持多轮对话、工具调用、推理等功能。传入 `tools: [{\"type\": \"image_generation\"}]` 时，生成图片的 Base64 数据位于 `output` 中 `type` 为 `image_generation_call` 的项目的 `result` 字段。\n",
+        "description": "OpenAI Responses API，用于创建模型响应。\n支持多轮对话、工具调用、推理等功能。Codex OAuth 渠道会在服务端自动补充 `image_generation` 工具，现有 NewAPI Key 用户无需修改请求；客户端已有工具和 `tool_choice` 保持不变。生成图片的 Base64 数据位于 `output` 中 `type` 为 `image_generation_call` 的项目的 `result` 字段。\n",
         "operationId": "createResponse",
         "tags": [
           "OpenAI格式(Responses)"
