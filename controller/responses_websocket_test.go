@@ -3,7 +3,10 @@ package controller
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 )
 
@@ -93,4 +96,120 @@ func TestResponsesWebsocketConnectionLimits(t *testing.T) {
 	require.True(t, acquireResponsesWebsocketConnection(12))
 	releaseResponsesWebsocketConnection(11)
 	releaseResponsesWebsocketConnection(12)
+}
+
+func codexWebsocketTestEvent(eventType string, errorValue any) *dto.ResponsesStreamResponse {
+	return &dto.ResponsesStreamResponse{
+		Type:  eventType,
+		Error: errorValue,
+	}
+}
+
+func TestResponsesWebsocketCodexRetriesHighDemandBeforeOutput(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6"}
+	requestPayload := []byte(`{"type":"response.create","model":"gpt-5.6","input":"hello"}`)
+	state.activate(&relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex},
+	}, requestPayload)
+
+	createdPayload := []byte(`{"type":"response.created","response":{"output":[]}}`)
+	action := state.handleCodexEvent(
+		codexWebsocketTestEvent("response.created", nil),
+		websocket.TextMessage,
+		createdPayload,
+	)
+	require.True(t, action.suppress)
+	require.Empty(t, action.retryPayload)
+
+	errorPayload := []byte(`{"type":"error","error":{"type":"server_error","code":"server_error","message":"We're currently experiencing high demand, which may cause temporary errors."}}`)
+	action = state.handleCodexEvent(
+		codexWebsocketTestEvent("error", map[string]any{
+			"type":    "server_error",
+			"code":    "server_error",
+			"message": "We're currently experiencing high demand, which may cause temporary errors.",
+		}),
+		websocket.TextMessage,
+		errorPayload,
+	)
+	require.True(t, action.suppress)
+	require.Equal(t, 2, action.retryAttempt)
+	require.Equal(t, requestPayload, action.retryPayload)
+	require.Contains(t, action.retryReason, "high demand")
+	require.Empty(t, action.forwardMessage)
+}
+
+func TestResponsesWebsocketCodexFlushesOnlySuccessfulAttemptPrefix(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6"}
+	requestPayload := []byte(`{"type":"response.create","model":"gpt-5.6","input":"hello"}`)
+	state.activate(&relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex},
+	}, requestPayload)
+
+	firstCreated := []byte(`{"type":"response.created","response":{"id":"first","output":[]}}`)
+	state.handleCodexEvent(codexWebsocketTestEvent("response.created", nil), websocket.TextMessage, firstCreated)
+	state.handleCodexEvent(codexWebsocketTestEvent("error", map[string]any{
+		"message": "high demand",
+	}), websocket.TextMessage, []byte(`{"type":"error"}`))
+
+	retryCreated := []byte(`{"type":"response.created","response":{"id":"retry","output":[]}}`)
+	action := state.handleCodexEvent(codexWebsocketTestEvent("response.created", nil), websocket.TextMessage, retryCreated)
+	require.True(t, action.suppress)
+
+	delta := []byte(`{"type":"response.output_text.delta","delta":"ok"}`)
+	action = state.handleCodexEvent(&dto.ResponsesStreamResponse{
+		Type:  "response.output_text.delta",
+		Delta: "ok",
+	}, websocket.TextMessage, delta)
+	require.True(t, action.suppress)
+	require.Len(t, action.forwardMessage, 2)
+	require.Equal(t, retryCreated, action.forwardMessage[0].payload)
+	require.Equal(t, delta, action.forwardMessage[1].payload)
+	for _, message := range action.forwardMessage {
+		require.NotEqual(t, firstCreated, message.payload)
+	}
+
+	postOutputError := state.handleCodexEvent(
+		codexWebsocketTestEvent("error", map[string]any{"message": "high demand"}),
+		websocket.TextMessage,
+		[]byte(`{"type":"error"}`),
+	)
+	require.False(t, postOutputError.suppress)
+	require.Empty(t, postOutputError.retryPayload)
+}
+
+func TestResponsesWebsocketCodexSuppressesPreviousAttemptTerminalEvent(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6"}
+	state.activate(
+		&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex}},
+		[]byte(`{"type":"response.create","model":"gpt-5.6"}`),
+	)
+	state.handleCodexEvent(
+		codexWebsocketTestEvent("error", map[string]any{"message": "high demand"}),
+		websocket.TextMessage,
+		[]byte(`{"type":"error"}`),
+	)
+
+	action := state.handleCodexEvent(&dto.ResponsesStreamResponse{
+		Type: "response.failed",
+		Response: &dto.OpenAIResponsesResponse{
+			Error: map[string]any{"message": "high demand"},
+		},
+	}, websocket.TextMessage, []byte(`{"type":"response.failed"}`))
+	require.True(t, action.suppress)
+	require.Empty(t, action.retryPayload)
+}
+
+func TestResponsesWebsocketRetryDoesNotAffectOtherProviders(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6"}
+	state.activate(
+		&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeOpenAI}},
+		[]byte(`{"type":"response.create","model":"gpt-5.6"}`),
+	)
+	action := state.handleCodexEvent(
+		codexWebsocketTestEvent("error", map[string]any{"message": "high demand"}),
+		websocket.TextMessage,
+		[]byte(`{"type":"error"}`),
+	)
+	require.False(t, action.suppress)
+	require.Empty(t, action.retryPayload)
 }

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -33,6 +34,8 @@ const (
 	defaultResponsesWebsocketMaxConnectionsPerToken = 5
 	responsesWebsocketMaxDuration                   = 60 * time.Minute
 	responsesWebsocketReadLimit                     = 32 << 20
+	responsesWebsocketCodexRetryAttempts            = 4
+	responsesWebsocketCodexRetryBufferLimit         = 4 << 20
 )
 
 var responsesWebsocketUpgrader = websocket.Upgrader{
@@ -186,8 +189,27 @@ func selectResponsesWebsocketChannel(c *gin.Context, modelName string) (*model.C
 }
 
 type responsesWebsocketActiveRequest struct {
-	info *relaycommon.RelayInfo
-	text strings.Builder
+	info                    *relaycommon.RelayInfo
+	text                    strings.Builder
+	upstreamPayload         []byte
+	codexRetryAttempt       int
+	codexAwaitingRetryStart bool
+	codexOutputStarted      bool
+	codexBufferedBytes      int
+	codexBufferedMessages   []responsesWebsocketBufferedMessage
+}
+
+type responsesWebsocketBufferedMessage struct {
+	messageType int
+	payload     []byte
+}
+
+type responsesWebsocketCodexEventAction struct {
+	suppress       bool
+	retryPayload   []byte
+	retryAttempt   int
+	retryReason    string
+	forwardMessage []responsesWebsocketBufferedMessage
 }
 
 type responsesWebsocketState struct {
@@ -208,11 +230,18 @@ func (s *responsesWebsocketState) reserve() bool {
 	return true
 }
 
-func (s *responsesWebsocketState) activate(info *relaycommon.RelayInfo) {
+func (s *responsesWebsocketState) activate(info *relaycommon.RelayInfo, upstreamPayload []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.preparing = false
-	s.active = &responsesWebsocketActiveRequest{info: info}
+	active := &responsesWebsocketActiveRequest{
+		info:            info,
+		upstreamPayload: append([]byte(nil), upstreamPayload...),
+	}
+	if info != nil && info.ChannelMeta != nil && info.ApiType == constant.APITypeCodex {
+		active.codexRetryAttempt = 1
+	}
+	s.active = active
 }
 
 func (s *responsesWebsocketState) cancelReservation() {
@@ -241,6 +270,142 @@ func (s *responsesWebsocketState) recordItem(item *dto.ResponsesOutput) {
 	tools := s.active.info.ResponsesUsageInfo.BuiltInTools
 	if tool, ok := tools[dto.BuildInToolWebSearchPreview]; ok && tool != nil {
 		tool.CallCount++
+	}
+}
+
+func responsesWebsocketFailureReason(event *dto.ResponsesStreamResponse) string {
+	if event == nil {
+		return ""
+	}
+	var openAIError any
+	switch event.Type {
+	case "error":
+		openAIError = event.Error
+	case "response.failed":
+		if event.Response != nil {
+			openAIError = event.Response.Error
+		}
+	}
+	extracted := dto.GetOpenAIError(openAIError)
+	if extracted == nil {
+		return ""
+	}
+	parts := make([]string, 0, 3)
+	for _, part := range []string{
+		strings.TrimSpace(extracted.Type),
+		strings.TrimSpace(fmt.Sprint(extracted.Code)),
+		strings.TrimSpace(extracted.Message),
+	} {
+		if part != "" && part != "<nil>" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, ": ")
+}
+
+func isRetryableResponsesWebsocketFailure(reason string) bool {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	return strings.Contains(reason, "overload") ||
+		strings.Contains(reason, "service_unavailable") ||
+		strings.Contains(reason, "temporarily unavailable") ||
+		strings.Contains(reason, "high demand") ||
+		strings.Contains(reason, "at capacity") ||
+		strings.Contains(reason, "try again later")
+}
+
+func isResponsesWebsocketPreOutputEvent(eventType string) bool {
+	switch eventType {
+	case "response.created", "response.in_progress", "response.queued":
+		return true
+	default:
+		return false
+	}
+}
+
+func cloneResponsesWebsocketMessage(messageType int, payload []byte) responsesWebsocketBufferedMessage {
+	return responsesWebsocketBufferedMessage{
+		messageType: messageType,
+		payload:     append([]byte(nil), payload...),
+	}
+}
+
+func (s *responsesWebsocketState) handleCodexEvent(
+	event *dto.ResponsesStreamResponse,
+	messageType int,
+	payload []byte,
+) responsesWebsocketCodexEventAction {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	active := s.active
+	if active == nil || active.info == nil || active.info.ChannelMeta == nil || active.info.ApiType != constant.APITypeCodex || active.codexOutputStarted {
+		return responsesWebsocketCodexEventAction{}
+	}
+
+	if active.codexAwaitingRetryStart {
+		if event.Type == "response.created" {
+			active.codexAwaitingRetryStart = false
+		} else if event.Type == "response.failed" {
+			// The Codex backend can emit response.failed after an error event.
+			// Once the retry has been sent, this terminal event still belongs to
+			// the previous attempt and must not leak to the client.
+			return responsesWebsocketCodexEventAction{suppress: true}
+		}
+	}
+
+	reason := responsesWebsocketFailureReason(event)
+	retryable := isRetryableResponsesWebsocketFailure(reason)
+	if event.Type == "response.completed" && event.Response != nil && len(event.Response.Output) == 0 {
+		retryable = true
+		reason = "empty_completed_response"
+	}
+	if retryable && active.codexRetryAttempt < responsesWebsocketCodexRetryAttempts {
+		active.codexRetryAttempt++
+		active.codexAwaitingRetryStart = event.Type == "error"
+		active.codexBufferedBytes = 0
+		active.codexBufferedMessages = nil
+		return responsesWebsocketCodexEventAction{
+			suppress:     true,
+			retryPayload: append([]byte(nil), active.upstreamPayload...),
+			retryAttempt: active.codexRetryAttempt,
+			retryReason:  reason,
+		}
+	}
+
+	current := cloneResponsesWebsocketMessage(messageType, payload)
+	if isResponsesWebsocketPreOutputEvent(event.Type) {
+		active.codexBufferedMessages = append(active.codexBufferedMessages, current)
+		active.codexBufferedBytes += len(current.payload)
+		if active.codexBufferedBytes <= responsesWebsocketCodexRetryBufferLimit {
+			return responsesWebsocketCodexEventAction{suppress: true}
+		}
+	} else {
+		active.codexBufferedMessages = append(active.codexBufferedMessages, current)
+	}
+
+	active.codexOutputStarted = true
+	forward := active.codexBufferedMessages
+	active.codexBufferedMessages = nil
+	active.codexBufferedBytes = 0
+	return responsesWebsocketCodexEventAction{
+		suppress:       true,
+		forwardMessage: forward,
+	}
+}
+
+func waitResponsesWebsocketCodexRetry(ctx context.Context, attempt int) error {
+	retryIndex := attempt - 1
+	if retryIndex < 1 {
+		retryIndex = 1
+	}
+	delay := time.Duration(250*(1<<(retryIndex-1))) * time.Millisecond
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
 }
 
@@ -435,8 +600,14 @@ func RelayResponsesWebsocket(c *gin.Context) {
 	upstream.SetReadLimit(responsesWebsocketReadLimit)
 	_ = upstream.SetReadDeadline(time.Now().Add(responsesWebsocketMaxDuration))
 
-	state.activate(info)
-	if err := upstream.WriteMessage(websocket.TextMessage, firstUpstreamPayload); err != nil {
+	state.activate(info, firstUpstreamPayload)
+	var upstreamWriteMu sync.Mutex
+	writeUpstream := func(messageType int, payload []byte) error {
+		upstreamWriteMu.Lock()
+		defer upstreamWriteMu.Unlock()
+		return upstream.WriteMessage(messageType, payload)
+	}
+	if err := writeUpstream(websocket.TextMessage, firstUpstreamPayload); err != nil {
 		refundResponsesWebsocketActive(c, state)
 		writeResponsesWebsocketError(client, &clientWriteMu, "upstream_write_error", err, http.StatusBadGateway)
 		return
@@ -469,11 +640,11 @@ func RelayResponsesWebsocket(c *gin.Context) {
 					writeResponsesWebsocketError(client, &clientWriteMu, "invalid_request", err, http.StatusBadRequest)
 					continue
 				}
-				state.activate(nextInfo)
+				state.activate(nextInfo, converted)
 				payload = converted
 				messageType = websocket.TextMessage
 			}
-			if err := upstream.WriteMessage(messageType, payload); err != nil {
+			if err := writeUpstream(messageType, payload); err != nil {
 				refundResponsesWebsocketActive(c, state)
 				clientDone <- err
 				return
@@ -498,8 +669,34 @@ func RelayResponsesWebsocket(c *gin.Context) {
 			return
 		}
 
+		messagesToForward := []responsesWebsocketBufferedMessage{{messageType: messageType, payload: payload}}
 		var event dto.ResponsesStreamResponse
 		if err := common.Unmarshal(payload, &event); err == nil {
+			action := state.handleCodexEvent(&event, messageType, payload)
+			if len(action.retryPayload) > 0 {
+				logger.LogWarn(c, fmt.Sprintf(
+					"codex websocket retry %d/%d after %s",
+					action.retryAttempt,
+					responsesWebsocketCodexRetryAttempts,
+					common.MaskSensitiveInfo(action.retryReason),
+				))
+				if err := waitResponsesWebsocketCodexRetry(c.Request.Context(), action.retryAttempt); err != nil {
+					refundResponsesWebsocketActive(c, state)
+					return
+				}
+				if err := writeUpstream(websocket.TextMessage, action.retryPayload); err != nil {
+					refundResponsesWebsocketActive(c, state)
+					writeResponsesWebsocketError(client, &clientWriteMu, "upstream_write_error", err, http.StatusBadGateway)
+					return
+				}
+				continue
+			}
+			if action.suppress && len(action.forwardMessage) == 0 {
+				continue
+			}
+			if len(action.forwardMessage) > 0 {
+				messagesToForward = action.forwardMessage
+			}
 			switch event.Type {
 			case "response.output_text.delta":
 				state.appendText(event.Delta)
@@ -518,7 +715,12 @@ func RelayResponsesWebsocket(c *gin.Context) {
 		}
 
 		clientWriteMu.Lock()
-		writeErr := client.WriteMessage(messageType, payload)
+		var writeErr error
+		for _, message := range messagesToForward {
+			if writeErr = client.WriteMessage(message.messageType, message.payload); writeErr != nil {
+				break
+			}
+		}
 		clientWriteMu.Unlock()
 		if writeErr != nil {
 			refundResponsesWebsocketActive(c, state)
