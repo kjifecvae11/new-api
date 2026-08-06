@@ -30,6 +30,13 @@ const FooterBar = () => {
   const logo = getLogo();
   const [statusState] = useContext(StatusContext);
   const isDemoSiteMode = statusState?.status?.demo_site_enabled || false;
+  const sourceRepository =
+    statusState?.status?.source_code_url ||
+    'https://github.com/kjifecvae11/new-api';
+  const sourceCommit = statusState?.status?.source_code_commit;
+  const sourceOffer = /^[0-9a-f]{7,40}$/i.test(sourceCommit || '')
+    ? `${sourceRepository.replace(/\/$/, '')}/tree/${sourceCommit}`
+    : sourceRepository;
 
   const loadFooter = () => {
     let footer_html = localStorage.getItem('footer_html');
@@ -200,7 +207,7 @@ const FooterBar = () => {
               {t('设计与开发由')}{' '}
             </span>
             <a
-              href='https://github.com/QuantumNous/new-api'
+              href={sourceOffer}
               target='_blank'
               rel='noopener noreferrer'
               className='!text-semi-color-primary font-medium'
@@ -211,7 +218,7 @@ const FooterBar = () => {
         </div>
       </footer>
     ),
-    [logo, systemName, t, currentYear, isDemoSiteMode],
+    [logo, systemName, t, currentYear, isDemoSiteMode, sourceOffer],
   );
 
   useEffect(() => {
@@ -232,7 +239,7 @@ const FooterBar = () => {
                 {t('设计与开发由')}{' '}
               </span>
               <a
-                href='https://github.com/QuantumNous/new-api'
+                href={sourceOffer}
                 target='_blank'
                 rel='noopener noreferrer'
                 className='!text-semi-color-primary font-medium'

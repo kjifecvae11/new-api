@@ -35,6 +35,10 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  SecureVerificationDialog,
+  useSecureVerification,
+} from '@/features/auth/secure-verification'
 import { deleteUserAccount } from '../../api'
 
 // ============================================================================
@@ -57,6 +61,31 @@ export function DeleteAccountDialog({
   const { reset } = useAuthStore((state) => state.auth)
   const [loading, setLoading] = useState(false)
   const [confirmation, setConfirmation] = useState('')
+  const verification = useSecureVerification()
+
+  const performDelete = async () => {
+    try {
+      setLoading(true)
+      const response = await deleteUserAccount()
+
+      if (!response.success) {
+        throw new Error(response.message || t('Failed to delete account'))
+      }
+
+      toast.success(t('Account deleted successfully'))
+      try {
+        await api.get('/api/user/logout')
+      } catch {
+        // The erased account is already disabled; logout is best effort.
+      }
+      reset()
+      localStorage.removeItem('user')
+      navigate({ to: '/sign-in' })
+      return response
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleDelete = async () => {
     if (confirmation !== username) {
@@ -64,30 +93,14 @@ export function DeleteAccountDialog({
       return
     }
 
-    try {
-      setLoading(true)
-      const response = await deleteUserAccount()
-
-      if (response.success) {
-        toast.success(t('Account deleted successfully'))
-
-        // Logout and redirect
-        try {
-          await api.get('/api/user/logout')
-        } catch {
-          // Ignore logout errors
-        }
-
-        reset()
-        localStorage.removeItem('user')
-        navigate({ to: '/sign-in' })
-      } else {
-        toast.error(response.message || t('Failed to delete account'))
-      }
-    } catch (_error) {
-      toast.error(t('Failed to delete account'))
-    } finally {
-      setLoading(false)
+    const started = await verification.startVerification(performDelete, {
+      title: t('Confirm account deletion'),
+      description: t(
+        'Confirm your identity with a recent authenticator-code or Passkey proof before permanent deletion.'
+      ),
+    })
+    if (started) {
+      handleOpenChange(false)
     }
   }
 
@@ -101,64 +114,86 @@ export function DeleteAccountDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className='sm:max-w-md'>
-        <DialogHeader>
-          <DialogTitle className='text-destructive flex items-center gap-2'>
-            <AlertTriangle className='h-5 w-5' />
-            {t('Delete Account')}
-          </DialogTitle>
-          <DialogDescription>
-            {t(
-              'This action cannot be undone. This will permanently delete your account and remove all your data from our servers.'
-            )}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle className='text-destructive flex items-center gap-2'>
+              <AlertTriangle className='h-5 w-5' />
+              {t('Delete Account')}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                'This action cannot be undone. It revokes your credentials and erases personal data. Required billing records are retained only under a pseudonymous account reference.'
+              )}
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className='my-6 space-y-4'>
-          <Alert variant='destructive'>
-            <AlertTriangle className='h-4 w-4' />
-            <AlertDescription>
-              {t('Warning: This action is permanent and irreversible!')}
-            </AlertDescription>
-          </Alert>
+          <div className='my-6 space-y-4'>
+            <Alert variant='destructive'>
+              <AlertTriangle className='h-4 w-4' />
+              <AlertDescription>
+                {t('Warning: This action is permanent and irreversible!')}
+              </AlertDescription>
+            </Alert>
 
-          <div className='space-y-2'>
-            <Label htmlFor='confirmation'>
-              {t('Type')} <strong>{username}</strong> {t('to confirm')}
-            </Label>
-            <Input
-              id='confirmation'
-              type='text'
-              value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
-              disabled={loading}
-              placeholder={username}
-              autoComplete='off'
-            />
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'Self-service deletion is unavailable without Two-factor Authentication or Passkey. Contact support for the identity-verified, two-person manual process.'
+              )}
+            </p>
+
+            <div className='space-y-2'>
+              <Label htmlFor='confirmation'>
+                {t('Type')} <strong>{username}</strong> {t('to confirm')}
+              </Label>
+              <Input
+                id='confirmation'
+                type='text'
+                value={confirmation}
+                onChange={(e) => setConfirmation(e.target.value)}
+                disabled={loading}
+                placeholder={username}
+                autoComplete='off'
+              />
+            </div>
           </div>
-        </div>
 
-        <DialogFooter>
-          <Button
-            type='button'
-            variant='outline'
-            onClick={() => handleOpenChange(false)}
-            disabled={loading}
-          >
-            {t('Cancel')}
-          </Button>
-          <Button
-            type='button'
-            variant='destructive'
-            onClick={handleDelete}
-            disabled={loading || confirmation !== username}
-          >
-            {loading && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-            {loading ? t('Deleting...') : t('Delete Account')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={() => handleOpenChange(false)}
+              disabled={loading}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              type='button'
+              variant='destructive'
+              onClick={handleDelete}
+              disabled={loading || confirmation !== username}
+            >
+              {loading && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              {loading ? t('Deleting...') : t('Delete Account')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <SecureVerificationDialog
+        open={verification.open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) verification.cancel()
+        }}
+        methods={verification.methods}
+        state={verification.state}
+        onVerify={async (method, code) => {
+          await verification.executeVerification(method, code)
+        }}
+        onCancel={verification.cancel}
+        onCodeChange={verification.setCode}
+        onMethodChange={verification.switchMethod}
+      />
+    </>
   )
 }

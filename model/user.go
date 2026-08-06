@@ -313,19 +313,14 @@ func GetUserIdByAffCode(affCode string) (int, error) {
 }
 
 func DeleteUserById(id int) (err error) {
-	if id == 0 {
-		return errors.New("id 为空！")
-	}
-	user := User{Id: id}
-	return user.Delete()
+	return EraseUserByID(id)
 }
 
 func HardDeleteUserById(id int) error {
-	if id == 0 {
-		return errors.New("id 为空！")
-	}
-	err := DB.Unscoped().Delete(&User{}, "id = ?", id).Error
-	return err
+	// Administrative deletion uses the same credential-revocation and
+	// pseudonymization path as self-service deletion so related personal data is
+	// not orphaned in logs or credential tables.
+	return EraseUserByID(id)
 }
 
 func inviteUser(inviterId int) (err error) {

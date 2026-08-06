@@ -747,7 +747,7 @@ const AccountManagement = ({
                           {t('删除账户')}
                         </Typography.Title>
                         <Typography.Text type='tertiary' className='text-sm'>
-                          {t('此操作不可逆，所有数据将被永久删除')}
+                          {t('此操作不可逆；凭据和个人数据将被清除，必要结算记录仅保留去标识关联')}
                         </Typography.Text>
                       </div>
                     </div>

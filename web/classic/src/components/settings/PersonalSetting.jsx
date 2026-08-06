@@ -377,12 +377,7 @@ const PersonalSetting = () => {
     showSuccess(t('系统令牌已复制到剪切板'));
   };
 
-  const deleteAccount = async () => {
-    if (inputs.self_account_deletion_confirmation !== userState.user.username) {
-      showError(t('请输入你的账户名以确认删除！'));
-      return;
-    }
-
+  const performAccountDeletion = async () => {
     const res = await API.delete('/api/user/self');
     const { success, message } = res.data;
 
@@ -393,7 +388,25 @@ const PersonalSetting = () => {
       localStorage.removeItem('user');
       navigate('/login');
     } else {
-      showError(message);
+      throw new Error(message || t('账户删除失败'));
+    }
+  };
+
+  const deleteAccount = async () => {
+    if (inputs.self_account_deletion_confirmation !== userState.user.username) {
+      showError(t('请输入你的账户名以确认删除！'));
+      return;
+    }
+
+    setPasskeyRequiredVerificationMethod(null);
+    const started = await startPasskeyVerification(performAccountDeletion, {
+      title: t('确认删除账户'),
+      description: t(
+        '永久删除前，必须使用近期的两步验证码或 Passkey 再次确认身份。若两者均未配置，请联系支持并走双人复核人工流程。',
+      ),
+    });
+    if (started) {
+      setShowAccountDeleteModal(false);
     }
   };
 
