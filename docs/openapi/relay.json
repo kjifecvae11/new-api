@@ -249,7 +249,7 @@
       "post": {
         "summary": "创建响应 (OpenAI Responses API)",
         "deprecated": false,
-        "description": "OpenAI Responses API，用于创建模型响应。\n支持多轮对话、工具调用、推理等功能。\n",
+        "description": "OpenAI Responses API，用于创建模型响应。\n支持多轮对话、工具调用、推理等功能。传入 `tools: [{\"type\": \"image_generation\"}]` 时，生成图片的 Base64 数据位于 `output` 中 `type` 为 `image_generation_call` 的项目的 `result` 字段。\n",
         "operationId": "createResponse",
         "tags": [
           "OpenAI格式(Responses)"
@@ -281,6 +281,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "NewAPIKey": []
           }
         ]
       }
@@ -327,12 +330,12 @@
     },
     "/v1/images/generations": {
       "post": {
-        "summary": "生成图像(qwen-image)",
+        "summary": "生成图像 (OpenAI Images API)",
         "deprecated": false,
-        "description": " 百炼qwen-image系列图片生成",
+        "description": "使用 OpenAI 兼容的 Images API 生成图片。Codex OAuth 上游由服务端完成认证，用户只需提供 NewAPI Key。成功响应默认在 `data[].b64_json` 返回图片 Base64 数据。",
         "operationId": "createImage",
         "tags": [
-          "图片生成/Qwen千问"
+          "OpenAI格式(图片生成)"
         ],
         "parameters": [],
         "requestBody": {
@@ -342,81 +345,78 @@
                 "type": "object",
                 "properties": {
                   "model": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "图片生成模型",
+                    "example": "gpt-image-2"
                   },
-                  "input": {
-                    "type": "object",
-                    "properties": {
-                      "messages": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "role": {
-                              "type": "string"
-                            },
-                            "content": {
-                              "type": "array",
-                              "items": {
-                                "type": "object",
-                                "properties": {
-                                  "text": {
-                                    "type": "string"
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    },
-                    "required": [
-                      "messages"
+                  "prompt": {
+                    "type": "string",
+                    "description": "待生成图片的文字描述"
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "生成图片数量",
+                    "default": 1
+                  },
+                  "size": {
+                    "type": "string",
+                    "description": "图片尺寸；具体可选值取决于模型",
+                    "example": "1024x1024"
+                  },
+                  "quality": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "low",
+                      "medium",
+                      "high"
+                    ],
+                    "default": "auto"
+                  },
+                  "output_format": {
+                    "type": "string",
+                    "enum": [
+                      "png",
+                      "jpeg",
+                      "webp"
+                    ],
+                    "default": "png"
+                  },
+                  "output_compression": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "JPEG 或 WebP 输出压缩等级"
+                  },
+                  "background": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "transparent",
+                      "opaque"
                     ]
                   },
-                  "parameters": {
-                    "type": "object",
-                    "properties": {
-                      "negative_prompt": {
-                        "type": "string"
-                      },
-                      "prompt_extend": {
-                        "type": "boolean"
-                      },
-                      "watermark": {
-                        "type": "boolean"
-                      },
-                      "size": {
-                        "type": "string"
-                      }
-                    }
+                  "moderation": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "low"
+                    ]
                   }
                 },
                 "required": [
                   "model",
-                  "input"
+                  "prompt"
                 ]
               },
               "example": {
-                "model": "qwen-image-plus",
-                "input": {
-                  "messages": [
-                    {
-                      "role": "user",
-                      "content": [
-                        {
-                          "text": "一副典雅庄重的对联悬挂于厅堂之中，房间是个安静古典的中式布置，桌子上放着一些青花瓷，对联上左书“义本生知人机同道善思新”，右书“通云赋智乾坤启数高志远”， 横批“智启通义”，字体飘逸，在中间挂着一幅中国风的画作，内容是岳阳楼。"
-                        }
-                      ]
-                    }
-                  ]
-                },
-                "parameters": {
-                  "negative_prompt": "",
-                  "prompt_extend": true,
-                  "watermark": false,
-                  "size": "1328*1328"
-                }
+                "model": "gpt-image-2",
+                "prompt": "一辆未来感有轨电车驶入雨夜中的霓虹车站，电影级灯光",
+                "size": "1024x1024",
+                "quality": "low",
+                "output_format": "png",
+                "n": 1
               }
             }
           }
@@ -437,6 +437,9 @@
         "security": [
           {
             "BearerAuth": []
+          },
+          {
+            "NewAPIKey": []
           }
         ]
       }
@@ -3062,9 +3065,16 @@
           },
           "tools": {
             "type": "array",
+            "description": "可用工具列表。图片生成工具示例：`{\"type\":\"image_generation\",\"size\":\"1024x1024\",\"quality\":\"low\",\"output_format\":\"png\"}`",
             "items": {
               "type": "object",
-              "properties": {}
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "example": "image_generation"
+                }
+              },
+              "additionalProperties": true
             }
           },
           "tool_choice": {
@@ -3144,6 +3154,10 @@
                 },
                 "status": {
                   "type": "string"
+                },
+                "result": {
+                  "type": "string",
+                  "description": "当 `type` 为 `image_generation_call` 时，包含生成图片的 Base64 数据"
                 },
                 "role": {
                   "type": "string"
@@ -4602,6 +4616,12 @@
         "type": "http",
         "scheme": "bearer",
         "description": "使用 Bearer Token 认证。\n格式: `Authorization: Bearer sk-xxxxxx`\n"
+      },
+      "NewAPIKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-NewAPI-Key",
+        "description": "Codex 分离认证使用的 NewAPI Key。普通 SDK 和 curl 优先使用 BearerAuth；当 Codex 的 Authorization 需要保留给现有 ChatGPT 登录时，通过此请求头额外传递 NewAPI Key。"
       },
       "SessionAuth": {
         "type": "apiKey",
