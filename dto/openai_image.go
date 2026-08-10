@@ -151,6 +151,16 @@ func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 		}
 	}
 
+	// xAI prices grok-imagine-image-quality at $0.05 for 1K and $0.07 for 2K.
+	// Resolution is an xAI extension captured in Extra, so apply its multiplier
+	// before fixed-price pre-consumption and settlement.
+	if i.Model == "grok-imagine-image-quality" && strings.EqualFold(
+		strings.Trim(string(i.Extra["resolution"]), "\" "),
+		"2k",
+	) {
+		sizeRatio = 1.4
+	}
+
 	// n is NOT included here; it is handled via OtherRatio("n") in
 	// image_handler.go (default) or channel adaptors (actual count).
 	// Including n here caused double-counting for channels that also
