@@ -8,6 +8,7 @@ var ModelList = []string{
 	"grok-4-fast-reasoning",
 	"grok-4-fast-non-reasoning",
 	"grok-4-0709",
+	"grok-4.5",
 	"grok-3-mini",
 	"grok-3",
 	"grok-2-vision-1212",
@@ -24,6 +25,7 @@ var ModelList = []string{
 	// image generation models
 	"grok-imagine-image-pro",
 	"grok-imagine-image",
+	"grok-imagine-image-quality",
 	"grok-2-image-1212",
 	// video generation model
 	"grok-imagine-video",
