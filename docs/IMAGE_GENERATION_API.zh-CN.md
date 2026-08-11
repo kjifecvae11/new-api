@@ -5,7 +5,7 @@
 ## 快速信息
 
 - Base URL：`https://ainiubi.org/v1`
-- 推荐图片模型：`gpt-image-2`
+- 推荐图片模型：`gpt-image-2` 或 `grok-imagine-image-quality`
 - 可用模型：`GET /v1/models`
 - 普通 SDK / curl：`Authorization: Bearer <NEWAPI_KEY>`
 - Codex 分离认证：`X-NewAPI-Key: <NEWAPI_KEY>`
@@ -62,6 +62,26 @@ response = client.images.generate(
 with open("tram.png", "wb") as image_file:
     image_file.write(base64.b64decode(response.data[0].b64_json))
 ```
+
+### Grok Imagine
+
+Grok 图片同样使用 NewAPI Key，不需要用户提供 Grok 登录或 xAI API Key。服务端通过受保护的 Grok CLI 会话生成图片，将临时 JPEG 转成 Base64 后立即删除服务端文件：
+
+```bash
+curl https://ainiubi.org/v1/images/generations \
+  -H "Authorization: Bearer $NEWAPI_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "grok-imagine-image-quality",
+    "prompt": "一辆未来感有轨电车驶入雨夜中的霓虹车站，电影级灯光",
+    "aspect_ratio": "16:9",
+    "resolution": "1k",
+    "response_format": "b64_json",
+    "n": 1
+  }'
+```
+
+当前 Grok CLI 后端仅支持 `n: 1`、`resolution: "1k"` 和 `response_format: "b64_json"`。支持的画幅包括 `1:1`、`16:9`、`9:16`、`4:3`、`3:4`、`3:2`、`2:3`、`2:1`、`1:2` 和 `auto`。Grok 图片接口不使用 GPT 图片模型的 `size`、`quality` 或 `output_format` 参数。
 
 常用参数：
 
