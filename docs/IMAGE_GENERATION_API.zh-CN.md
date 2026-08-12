@@ -1,6 +1,6 @@
 # 图片生成 API 使用指南
 
-本文面向 `https://ainiubi.org` 的 NewAPI Key 用户。用户只需自己的 NewAPI Key；Codex OAuth 文件、上游 access token 和 account ID 均由服务端保管，不应由用户上传或传入接口。
+本文面向 `https://ainiubi.org` 的 NewAPI Key 用户。无需登录即可访问的网页版文档位于 [https://ainiubi.org/docs/images](https://ainiubi.org/docs/images)。用户只需自己的 NewAPI Key；Codex OAuth 文件、上游 access token 和 account ID 均由服务端保管，不应由用户上传或传入接口。
 
 ## 快速信息
 
@@ -9,6 +9,8 @@
 - 可用模型：`GET /v1/models`
 - 普通 SDK / curl：`Authorization: Bearer <NEWAPI_KEY>`
 - Codex 分离认证：`X-NewAPI-Key: <NEWAPI_KEY>`
+
+图片模型统一使用 `POST /v1/images/generations`。客户端应保持认证、超时、Base64 解码和错误处理逻辑不变，只按所选模型切换参数块；后续接入的新图片模型以认证后的 `GET /v1/models` 和网页版能力说明为准。
 
 | 场景 | 接口 | 图片 Base64 位置 |
 | --- | --- | --- |
