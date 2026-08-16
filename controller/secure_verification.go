@@ -15,6 +15,8 @@ const (
 	// SecureVerificationSessionKey means the user has fully passed secure verification.
 	SecureVerificationSessionKey       = "secure_verified_at"
 	secureVerificationMethodSessionKey = "secure_verified_method"
+	secureVerificationUserIDSessionKey = "secure_verified_user_id"
+	secureVerificationAuthSessionKey   = "secure_verified_auth_version"
 	secureVerificationMethod2FA        = "2fa"
 	secureVerificationMethodPasskey    = "passkey"
 	// PasskeyReadySessionKey means WebAuthn finished and /api/verify can finalize step-up verification.
@@ -148,6 +150,8 @@ func setSecureVerificationSession(c *gin.Context, method string) (int64, error) 
 	now := time.Now().Unix()
 	session.Set(SecureVerificationSessionKey, now)
 	session.Set(secureVerificationMethodSessionKey, method)
+	session.Set(secureVerificationUserIDSessionKey, c.GetInt("id"))
+	session.Set(secureVerificationAuthSessionKey, common.SessionAuthVersion)
 	if err := session.Save(); err != nil {
 		return 0, err
 	}

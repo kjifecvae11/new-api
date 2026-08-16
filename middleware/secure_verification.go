@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
 )
@@ -12,6 +13,8 @@ const (
 	// SecureVerificationSessionKey 安全验证的 session key（与 controller 保持一致）
 	SecureVerificationSessionKey       = "secure_verified_at"
 	secureVerificationMethodSessionKey = "secure_verified_method"
+	secureVerificationUserIDSessionKey = "secure_verified_user_id"
+	secureVerificationAuthSessionKey   = "secure_verified_auth_version"
 	// SecureVerificationTimeout 验证有效期（秒）
 	SecureVerificationTimeout = 300 // 5分钟
 )
@@ -73,6 +76,24 @@ func SecureVerificationRequired() gin.HandlerFunc {
 			return
 		}
 
+		verifiedUserID, userIDOK := session.Get(secureVerificationUserIDSessionKey).(int)
+		verifiedAuthVersion, authVersionOK := session.Get(secureVerificationAuthSessionKey).(int)
+		verifiedMethod, methodOK := session.Get(secureVerificationMethodSessionKey).(string)
+		if !userIDOK || verifiedUserID != userId || !authVersionOK || verifiedAuthVersion != common.SessionAuthVersion ||
+			!methodOK || (verifiedMethod != "2fa" && verifiedMethod != "passkey") {
+			clearSecureVerificationSession(session)
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"message": "验证状态与当前登录不匹配，请重新验证",
+				"code":    "VERIFICATION_INVALID",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Set("secure_verified_at", verifiedAt)
+		c.Set("secure_verified_method", verifiedMethod)
+
 		c.Next()
 	}
 }
@@ -80,6 +101,8 @@ func SecureVerificationRequired() gin.HandlerFunc {
 func clearSecureVerificationSession(session sessions.Session) {
 	session.Delete(SecureVerificationSessionKey)
 	session.Delete(secureVerificationMethodSessionKey)
+	session.Delete(secureVerificationUserIDSessionKey)
+	session.Delete(secureVerificationAuthSessionKey)
 	_ = session.Save()
 }
 

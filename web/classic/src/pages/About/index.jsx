@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { API, showError } from '../../helpers';
 import { marked } from 'marked';
 import { Empty } from '@douyinfe/semi-ui';
@@ -26,12 +26,21 @@ import {
   IllustrationConstructionDark,
 } from '@douyinfe/semi-illustrations';
 import { useTranslation } from 'react-i18next';
+import { StatusContext } from '../../context/Status';
 
 const About = () => {
   const { t } = useTranslation();
   const [about, setAbout] = useState('');
   const [aboutLoaded, setAboutLoaded] = useState(false);
+  const [statusState] = useContext(StatusContext);
   const currentYear = new Date().getFullYear();
+  const sourceRepository =
+    statusState?.status?.source_code_url ||
+    'https://github.com/kjifecvae11/new-api';
+  const sourceCommit = statusState?.status?.source_code_commit;
+  const sourceOffer = /^[0-9a-f]{7,40}$/i.test(sourceCommit || '')
+    ? `${sourceRepository.replace(/\/$/, '')}/tree/${sourceCommit}`
+    : sourceRepository;
 
   const displayAbout = async () => {
     setAbout(localStorage.getItem('about') || '');
@@ -64,16 +73,16 @@ const About = () => {
       <p>{t('可在设置页面设置关于内容，支持 HTML & Markdown')}</p>
       {t('New API项目仓库地址：')}
       <a
-        href='https://github.com/QuantumNous/new-api'
+        href={sourceOffer}
         target='_blank'
         rel='noopener noreferrer'
         className='!text-semi-color-primary'
       >
-        https://github.com/QuantumNous/new-api
+        {sourceOffer}
       </a>
       <p>
         <a
-          href='https://github.com/QuantumNous/new-api'
+          href={sourceOffer}
           target='_blank'
           rel='noopener noreferrer'
           className='!text-semi-color-primary'

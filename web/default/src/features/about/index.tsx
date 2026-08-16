@@ -22,7 +22,24 @@ import { useTranslation } from 'react-i18next'
 import { Markdown } from '@/components/ui/markdown'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PublicLayout } from '@/components/layout'
+import { useStatus } from '@/hooks/use-status'
 import { getAboutContent } from './api'
+
+const SOURCE_REPOSITORY = 'https://github.com/kjifecvae11/new-api'
+
+function sourceOfferUrl(status: Record<string, unknown> | null) {
+  const configured =
+    typeof status?.source_code_url === 'string' &&
+    isValidUrl(status.source_code_url)
+      ? status.source_code_url.replace(/\/$/, '')
+      : SOURCE_REPOSITORY
+  const commit =
+    typeof status?.source_code_commit === 'string' &&
+    /^[0-9a-f]{7,40}$/i.test(status.source_code_commit)
+      ? status.source_code_commit
+      : ''
+  return commit ? `${configured}/tree/${commit}` : configured
+}
 
 function isValidUrl(value: string) {
   try {
@@ -39,7 +56,9 @@ function isLikelyHtml(value: string) {
 
 function EmptyAboutState() {
   const { t } = useTranslation()
+  const { status } = useStatus()
   const currentYear = new Date().getFullYear()
+  const deployedSource = sourceOfferUrl(status)
 
   return (
     <div className='flex min-h-[60vh] items-center justify-center p-8'>
@@ -57,19 +76,19 @@ function EmptyAboutState() {
         </div>
         <div className='space-y-4 text-sm'>
           <p>
-            {t('New API Project Repository:')}{' '}
+            {t('Source code for this deployed service:')}{' '}
             <a
-              href='https://github.com/QuantumNous/new-api'
+              href={deployedSource}
               target='_blank'
               rel='noopener noreferrer'
               className='text-primary hover:underline'
             >
-              {t('https://github.com/QuantumNous/new-api')}
+              {deployedSource}
             </a>
           </p>
           <p className='text-muted-foreground'>
             <a
-              href='https://github.com/QuantumNous/new-api'
+              href={deployedSource}
               target='_blank'
               rel='noopener noreferrer'
               className='text-primary hover:underline'
@@ -107,7 +126,7 @@ function EmptyAboutState() {
           <p className='text-muted-foreground'>
             {t('This project must be used in compliance with the')}{' '}
             <a
-              href='https://github.com/QuantumNous/new-api/blob/main/LICENSE'
+              href={`${SOURCE_REPOSITORY}/blob/main/LICENSE`}
               target='_blank'
               rel='noopener noreferrer'
               className='text-primary hover:underline'
