@@ -285,6 +285,10 @@ func responsesWebsocketFailureReason(event *dto.ResponsesStreamResponse) string 
 		if event.Response != nil {
 			openAIError = event.Response.Error
 		}
+	case "response.incomplete":
+		if event.Response != nil && event.Response.IncompleteDetails != nil {
+			return strings.TrimSpace(event.Response.IncompleteDetails.Reason)
+		}
 	}
 	extracted := dto.GetOpenAIError(openAIError)
 	if extracted == nil {
@@ -307,6 +311,8 @@ func isRetryableResponsesWebsocketFailure(reason string) bool {
 	reason = strings.ToLower(strings.TrimSpace(reason))
 	return strings.Contains(reason, "overload") ||
 		strings.Contains(reason, "service_unavailable") ||
+		strings.Contains(reason, "upstream_server_error") ||
+		strings.Contains(reason, "server_error") ||
 		strings.Contains(reason, "temporarily unavailable") ||
 		strings.Contains(reason, "high demand") ||
 		strings.Contains(reason, "at capacity") ||
