@@ -155,3 +155,18 @@ func TestOaiResponsesStreamHandlerRepairsCompletedOutput(t *testing.T) {
 		t.Fatalf("completed output text = %q, want OK", got)
 	}
 }
+
+func TestSynthesizeResponsesCompletionOnEOF(t *testing.T) {
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5.6-sol"}}
+	usage := &dto.Usage{CompletionTokens: 2}
+	event := synthesizeResponsesCompletion(info, nil, nil, "OK", usage)
+	if event.Type != "response.completed" || event.Response == nil {
+		t.Fatalf("synthetic event = %#v", event)
+	}
+	if got := event.Response.Status; string(got) != `"completed"` {
+		t.Fatalf("status = %s, want completed", got)
+	}
+	if got := event.Response.Output[0].Content[0].Text; got != "OK" {
+		t.Fatalf("output text = %q, want OK", got)
+	}
+}
