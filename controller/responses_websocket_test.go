@@ -171,7 +171,7 @@ func TestResponsesWebsocketCodexGoalToolEventsRemainRetryable(t *testing.T) {
 		Type: "response.output_item.added",
 		Item: &dto.ResponsesOutput{Type: "function_call", Name: "spawn_agent"},
 	}, websocket.TextMessage, []byte(`{"type":"response.output_item.added","item":{"type":"function_call","name":"spawn_agent"}}`))
-	require.True(t, toolAction.suppress)
+	require.False(t, toolAction.suppress)
 	require.Empty(t, toolAction.retryPayload)
 
 	errorAction := state.handleCodexEvent(codexWebsocketTestEvent("error", map[string]any{

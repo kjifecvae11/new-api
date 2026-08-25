@@ -334,10 +334,10 @@ func isResponsesWebsocketPreOutputEvent(eventType string) bool {
 	}
 }
 
-// Tool calls and reasoning items are upstream execution state, not text the
-// client has shown to the user. Goal-mode sub-agents commonly emit several of
-// these before the final answer, so keep them replay-safe until text arrives
-// or the response reaches a terminal event.
+// Only text and terminal events count as user-visible output for retry gating.
+// Goal-mode tool calls still need to be forwarded immediately so the Codex
+// client can execute the sub-agent; they must not permanently disable the
+// transient upstream retry path.
 func isResponsesWebsocketVisibleOutput(event *dto.ResponsesStreamResponse) bool {
 	if event == nil {
 		return false
@@ -405,11 +405,25 @@ func (s *responsesWebsocketState) handleCodexEvent(
 	}
 
 	current := cloneResponsesWebsocketMessage(messageType, payload)
-	active.codexBufferedMessages = append(active.codexBufferedMessages, current)
-	active.codexBufferedBytes += len(current.payload)
-	if !isResponsesWebsocketVisibleOutput(event) && active.codexBufferedBytes <= responsesWebsocketCodexRetryBufferLimit {
-		return responsesWebsocketCodexEventAction{suppress: true}
+	if isResponsesWebsocketPreOutputEvent(event.Type) {
+		active.codexBufferedMessages = append(active.codexBufferedMessages, current)
+		active.codexBufferedBytes += len(current.payload)
+		if active.codexBufferedBytes <= responsesWebsocketCodexRetryBufferLimit {
+			return responsesWebsocketCodexEventAction{suppress: true}
+		}
+		active.codexOutputStarted = true
+		forward := active.codexBufferedMessages
+		active.codexBufferedMessages = nil
+		active.codexBufferedBytes = 0
+		return responsesWebsocketCodexEventAction{suppress: true, forwardMessage: forward}
 	}
+	if !isResponsesWebsocketVisibleOutput(event) {
+		// Function-call and reasoning events are part of the live tool protocol.
+		// Forward them now, but keep retry gating open until text or a terminal
+		// event is observed.
+		return responsesWebsocketCodexEventAction{}
+	}
+	active.codexBufferedMessages = append(active.codexBufferedMessages, current)
 
 	active.codexOutputStarted = true
 	forward := active.codexBufferedMessages
