@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
@@ -136,6 +137,27 @@ func TestResponsesWebsocketCodexRetriesHighDemandBeforeOutput(t *testing.T) {
 	require.Equal(t, requestPayload, action.retryPayload)
 	require.Contains(t, action.retryReason, "high demand")
 	require.Empty(t, action.forwardMessage)
+}
+
+func TestResponsesWebsocketCodexRetriesUpstreamServerErrorIncomplete(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6-sol"}
+	requestPayload := []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":"hello"}`)
+	state.activate(&relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex},
+	}, requestPayload)
+
+	action := state.handleCodexEvent(&dto.ResponsesStreamResponse{
+		Type: "response.incomplete",
+		Response: &dto.OpenAIResponsesResponse{
+			Status:            json.RawMessage(`"incomplete"`),
+			IncompleteDetails: &dto.IncompleteDetails{Reason: "upstream_server_error"},
+		},
+	}, websocket.TextMessage, []byte(`{"type":"response.incomplete"}`))
+
+	require.True(t, action.suppress)
+	require.Equal(t, 2, action.retryAttempt)
+	require.Equal(t, requestPayload, action.retryPayload)
+	require.Equal(t, "upstream_server_error", action.retryReason)
 }
 
 func TestResponsesWebsocketCodexFlushesOnlySuccessfulAttemptPrefix(t *testing.T) {

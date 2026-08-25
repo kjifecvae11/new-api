@@ -79,6 +79,8 @@ func isRetryableCodexStreamFailure(code string) bool {
 	code = strings.ToLower(strings.TrimSpace(code))
 	return strings.Contains(code, "overload") ||
 		strings.Contains(code, "service_unavailable") ||
+		strings.Contains(code, "upstream_server_error") ||
+		strings.Contains(code, "server_error") ||
 		strings.Contains(code, "temporarily unavailable") ||
 		strings.Contains(code, "high demand") ||
 		strings.Contains(code, "at capacity") ||
@@ -131,6 +133,13 @@ func probeCodexStreamResponse(resp *http.Response) (retry bool, reason string, e
 						code := ""
 						if event.Response != nil {
 							code = codexStreamErrorReason(event.Response.Error)
+						}
+						rebuildCodexStreamBody(resp, prefix.Bytes(), reader, originalBody)
+						return isRetryableCodexStreamFailure(code), code, nil
+					case "response.incomplete":
+						code := ""
+						if event.Response != nil && event.Response.IncompleteDetails != nil {
+							code = strings.TrimSpace(event.Response.IncompleteDetails.Reason)
 						}
 						rebuildCodexStreamBody(resp, prefix.Bytes(), reader, originalBody)
 						return isRetryableCodexStreamFailure(code), code, nil
