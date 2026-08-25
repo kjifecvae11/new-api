@@ -160,6 +160,36 @@ func TestResponsesWebsocketCodexRetriesUpstreamServerErrorIncomplete(t *testing.
 	require.Equal(t, "upstream_server_error", action.retryReason)
 }
 
+func TestResponsesWebsocketCodexRetriesTopLevelIncompleteDetails(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6-sol"}
+	requestPayload := []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":"hello"}`)
+	state.activate(&relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex},
+	}, requestPayload)
+
+	action := state.handleCodexEvent(&dto.ResponsesStreamResponse{
+		Type:              "response.incomplete",
+		IncompleteDetails: &dto.IncompleteDetails{Reason: "upstream_server_error"},
+	}, websocket.TextMessage, []byte(`{"type":"response.incomplete","incomplete_details":{"reason":"upstream_server_error"}}`))
+
+	require.True(t, action.suppress)
+	require.Equal(t, "upstream_server_error", action.retryReason)
+	require.Equal(t, requestPayload, action.retryPayload)
+}
+
+func TestResponsesWebsocketCodexRetriesBeforeOutputDisconnect(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6-sol"}
+	requestPayload := []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":"hello"}`)
+	state.activate(&relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex},
+	}, requestPayload)
+
+	payload, attempt, ok := state.retryAfterCodexDisconnect()
+	require.True(t, ok)
+	require.Equal(t, 2, attempt)
+	require.Equal(t, requestPayload, payload)
+}
+
 func TestResponsesWebsocketCodexFlushesOnlySuccessfulAttemptPrefix(t *testing.T) {
 	state := &responsesWebsocketState{modelName: "gpt-5.6"}
 	requestPayload := []byte(`{"type":"response.create","model":"gpt-5.6","input":"hello"}`)

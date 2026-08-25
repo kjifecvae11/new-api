@@ -134,12 +134,18 @@ func probeCodexStreamResponse(resp *http.Response) (retry bool, reason string, e
 						if event.Response != nil {
 							code = codexStreamErrorReason(event.Response.Error)
 						}
+						if code == "" {
+							code = codexStreamErrorReason(event.Error)
+						}
 						rebuildCodexStreamBody(resp, prefix.Bytes(), reader, originalBody)
 						return isRetryableCodexStreamFailure(code), code, nil
 					case "response.incomplete":
 						code := ""
 						if event.Response != nil && event.Response.IncompleteDetails != nil {
-							code = strings.TrimSpace(event.Response.IncompleteDetails.Reason)
+							code = event.Response.IncompleteDetails.Reason
+						}
+						if code == "" && event.IncompleteDetails != nil {
+							code = event.IncompleteDetails.Reason
 						}
 						rebuildCodexStreamBody(resp, prefix.Bytes(), reader, originalBody)
 						return isRetryableCodexStreamFailure(code), code, nil

@@ -395,9 +395,13 @@ type ResponsesStreamResponse struct {
 	Type     string                   `json:"type"`
 	Response *OpenAIResponsesResponse `json:"response,omitempty"`
 	Error    any                      `json:"error,omitempty"`
-	Delta    string                   `json:"delta,omitempty"`
-	Text     string                   `json:"text,omitempty"`
-	Item     *ResponsesOutput         `json:"item,omitempty"`
+	// Some Responses-compatible upstreams emit incomplete_details at the
+	// event level instead of nesting it under response. Keep both shapes so
+	// relay retry/error handling can make the same decision for either form.
+	IncompleteDetails *IncompleteDetails `json:"incomplete_details,omitempty"`
+	Delta             string             `json:"delta,omitempty"`
+	Text              string             `json:"text,omitempty"`
+	Item              *ResponsesOutput   `json:"item,omitempty"`
 	// - response.function_call_arguments.delta
 	// - response.function_call_arguments.done
 	OutputIndex  *int                           `json:"output_index,omitempty"`

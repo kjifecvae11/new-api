@@ -82,6 +82,20 @@ func TestProbeCodexStreamResponseRetriesUpstreamServerErrorIncomplete(t *testing
 	}
 }
 
+func TestProbeCodexStreamResponseRetriesTopLevelIncompleteDetails(t *testing.T) {
+	body := "event: response.incomplete\n" +
+		"data: {\"type\":\"response.incomplete\",\"incomplete_details\":{\"reason\":\"upstream_server_error\"}}\n\n"
+	resp := codexTestStreamResponse(body)
+
+	retry, reason, err := probeCodexStreamResponse(resp)
+	if err != nil {
+		t.Fatalf("probeCodexStreamResponse() error = %v", err)
+	}
+	if !retry || reason != "upstream_server_error" {
+		t.Fatalf("probeCodexStreamResponse() = (%v, %q), want (true, upstream_server_error)", retry, reason)
+	}
+}
+
 func TestCodexUnavailableResponseConvertsStreamFailureToRetryableHTTPStatus(t *testing.T) {
 	resp := codexUnavailableResponse(codexTestStreamResponse("data: ignored\n\n"), "high demand")
 

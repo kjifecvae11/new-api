@@ -285,9 +285,15 @@ func responsesWebsocketFailureReason(event *dto.ResponsesStreamResponse) string 
 		if event.Response != nil {
 			openAIError = event.Response.Error
 		}
+		if openAIError == nil {
+			openAIError = event.Error
+		}
 	case "response.incomplete":
 		if event.Response != nil && event.Response.IncompleteDetails != nil {
 			return strings.TrimSpace(event.Response.IncompleteDetails.Reason)
+		}
+		if event.IncompleteDetails != nil {
+			return strings.TrimSpace(event.IncompleteDetails.Reason)
 		}
 	}
 	extracted := dto.GetOpenAIError(openAIError)
@@ -421,6 +427,33 @@ func (s *responsesWebsocketState) takeActive() *responsesWebsocketActiveRequest 
 	active := s.active
 	s.active = nil
 	return active
+}
+
+// retryAfterCodexDisconnect returns the original request only while no
+// user-visible output has been emitted. Replaying after output would duplicate
+// tokens, so those streams must remain terminal and be reported to the client.
+func (s *responsesWebsocketState) retryAfterCodexDisconnect() ([]byte, int, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	active := s.active
+	if active == nil || active.info == nil || active.info.ApiType != constant.APITypeCodex ||
+		active.codexOutputStarted || active.codexRetryAttempt >= responsesWebsocketCodexRetryAttempts {
+		return nil, 0, false
+	}
+	active.codexRetryAttempt++
+	active.codexAwaitingRetryStart = false
+	active.codexBufferedBytes = 0
+	active.codexBufferedMessages = nil
+	return append([]byte(nil), active.upstreamPayload...), active.codexRetryAttempt, true
+}
+
+func (s *responsesWebsocketState) activeInfo() *relaycommon.RelayInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		return nil
+	}
+	return s.active.info
 }
 
 func refundResponsesWebsocketActive(c *gin.Context, state *responsesWebsocketState) {
@@ -602,7 +635,16 @@ func RelayResponsesWebsocket(c *gin.Context) {
 		writeResponsesWebsocketError(client, &clientWriteMu, "upstream_connection_error", err, http.StatusBadGateway)
 		return
 	}
-	defer upstream.Close()
+	var upstreamMu sync.RWMutex
+	closeUpstream := func() {
+		upstreamMu.RLock()
+		conn := upstream
+		upstreamMu.RUnlock()
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}
+	defer closeUpstream()
 	upstream.SetReadLimit(responsesWebsocketReadLimit)
 	_ = upstream.SetReadDeadline(time.Now().Add(responsesWebsocketMaxDuration))
 
@@ -611,7 +653,24 @@ func RelayResponsesWebsocket(c *gin.Context) {
 	writeUpstream := func(messageType int, payload []byte) error {
 		upstreamWriteMu.Lock()
 		defer upstreamWriteMu.Unlock()
-		return upstream.WriteMessage(messageType, payload)
+		upstreamMu.RLock()
+		conn := upstream
+		upstreamMu.RUnlock()
+		if conn == nil {
+			return fmt.Errorf("upstream connection is unavailable")
+		}
+		return conn.WriteMessage(messageType, payload)
+	}
+	replaceUpstream := func(next *websocket.Conn) {
+		upstreamWriteMu.Lock()
+		defer upstreamWriteMu.Unlock()
+		upstreamMu.Lock()
+		previous := upstream
+		upstream = next
+		upstreamMu.Unlock()
+		if previous != nil {
+			_ = previous.Close()
+		}
 	}
 	if err := writeUpstream(websocket.TextMessage, firstUpstreamPayload); err != nil {
 		refundResponsesWebsocketActive(c, state)
@@ -624,7 +683,7 @@ func RelayResponsesWebsocket(c *gin.Context) {
 		for {
 			messageType, payload, readErr := client.ReadMessage()
 			if readErr != nil {
-				_ = upstream.Close()
+				closeUpstream()
 				clientDone <- readErr
 				return
 			}
@@ -666,8 +725,33 @@ func RelayResponsesWebsocket(c *gin.Context) {
 		default:
 		}
 
-		messageType, payload, err := upstream.ReadMessage()
+		upstreamMu.RLock()
+		readConn := upstream
+		if readConn == nil {
+			upstreamMu.RUnlock()
+			refundResponsesWebsocketActive(c, state)
+			writeResponsesWebsocketError(client, &clientWriteMu, "upstream_disconnected", fmt.Errorf("upstream connection is unavailable"), http.StatusBadGateway)
+			return
+		}
+		messageType, payload, err := readConn.ReadMessage()
+		upstreamMu.RUnlock()
 		if err != nil {
+			if !isExpectedWebsocketClose(err) {
+				if retryPayload, retryAttempt, ok := state.retryAfterCodexDisconnect(); ok {
+					logger.LogWarn(c, fmt.Sprintf("codex websocket retry %d/%d after upstream disconnect", retryAttempt, responsesWebsocketCodexRetryAttempts))
+					if retryErr := waitResponsesWebsocketCodexRetry(c.Request.Context(), retryAttempt); retryErr == nil {
+						if next, dialErr := relay.DialResponsesWebsocket(c, state.activeInfo()); dialErr == nil {
+							next.SetReadLimit(responsesWebsocketReadLimit)
+							_ = next.SetReadDeadline(time.Now().Add(responsesWebsocketMaxDuration))
+							replaceUpstream(next)
+							if writeErr := writeUpstream(websocket.TextMessage, retryPayload); writeErr == nil {
+								continue
+							}
+							_ = next.Close()
+						}
+					}
+				}
+			}
 			refundResponsesWebsocketActive(c, state)
 			if !isExpectedWebsocketClose(err) {
 				writeResponsesWebsocketError(client, &clientWriteMu, "upstream_disconnected", err, http.StatusBadGateway)
