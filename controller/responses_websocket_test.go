@@ -160,6 +160,30 @@ func TestResponsesWebsocketCodexRetriesUpstreamServerErrorIncomplete(t *testing.
 	require.Equal(t, "upstream_server_error", action.retryReason)
 }
 
+func TestResponsesWebsocketCodexGoalToolEventsRemainRetryable(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6-sol"}
+	requestPayload := []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":"use a sub-agent"}`)
+	state.activate(&relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ApiType: constant.APITypeCodex},
+	}, requestPayload)
+
+	toolAction := state.handleCodexEvent(&dto.ResponsesStreamResponse{
+		Type: "response.output_item.added",
+		Item: &dto.ResponsesOutput{Type: "function_call", Name: "spawn_agent"},
+	}, websocket.TextMessage, []byte(`{"type":"response.output_item.added","item":{"type":"function_call","name":"spawn_agent"}}`))
+	require.True(t, toolAction.suppress)
+	require.Empty(t, toolAction.retryPayload)
+
+	errorAction := state.handleCodexEvent(codexWebsocketTestEvent("error", map[string]any{
+		"type":    "server_error",
+		"code":    "upstream_server_error",
+		"message": "temporary upstream failure",
+	}), websocket.TextMessage, []byte(`{"type":"error"}`))
+	require.True(t, errorAction.suppress)
+	require.Equal(t, requestPayload, errorAction.retryPayload)
+	require.Equal(t, 2, errorAction.retryAttempt)
+}
+
 func TestResponsesWebsocketCodexRetriesTopLevelIncompleteDetails(t *testing.T) {
 	state := &responsesWebsocketState{modelName: "gpt-5.6-sol"}
 	requestPayload := []byte(`{"type":"response.create","model":"gpt-5.6-sol","input":"hello"}`)

@@ -334,6 +334,26 @@ func isResponsesWebsocketPreOutputEvent(eventType string) bool {
 	}
 }
 
+// Tool calls and reasoning items are upstream execution state, not text the
+// client has shown to the user. Goal-mode sub-agents commonly emit several of
+// these before the final answer, so keep them replay-safe until text arrives
+// or the response reaches a terminal event.
+func isResponsesWebsocketVisibleOutput(event *dto.ResponsesStreamResponse) bool {
+	if event == nil {
+		return false
+	}
+	switch event.Type {
+	case "response.output_text.delta":
+		return event.Delta != ""
+	case "response.output_text.done":
+		return event.Text != "" || event.Delta != ""
+	case "response.completed", "response.incomplete", "response.failed", "error":
+		return true
+	default:
+		return false
+	}
+}
+
 func cloneResponsesWebsocketMessage(messageType int, payload []byte) responsesWebsocketBufferedMessage {
 	return responsesWebsocketBufferedMessage{
 		messageType: messageType,
@@ -385,14 +405,10 @@ func (s *responsesWebsocketState) handleCodexEvent(
 	}
 
 	current := cloneResponsesWebsocketMessage(messageType, payload)
-	if isResponsesWebsocketPreOutputEvent(event.Type) {
-		active.codexBufferedMessages = append(active.codexBufferedMessages, current)
-		active.codexBufferedBytes += len(current.payload)
-		if active.codexBufferedBytes <= responsesWebsocketCodexRetryBufferLimit {
-			return responsesWebsocketCodexEventAction{suppress: true}
-		}
-	} else {
-		active.codexBufferedMessages = append(active.codexBufferedMessages, current)
+	active.codexBufferedMessages = append(active.codexBufferedMessages, current)
+	active.codexBufferedBytes += len(current.payload)
+	if !isResponsesWebsocketVisibleOutput(event) && active.codexBufferedBytes <= responsesWebsocketCodexRetryBufferLimit {
+		return responsesWebsocketCodexEventAction{suppress: true}
 	}
 
 	active.codexOutputStarted = true
