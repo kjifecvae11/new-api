@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -70,6 +71,46 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	return &usage, nil
 }
 
+func synthesizeResponsesCompletion(
+	info *relaycommon.RelayInfo,
+	template *dto.OpenAIResponsesResponse,
+	items []dto.ResponsesOutput,
+	text string,
+	usage *dto.Usage,
+) dto.ResponsesStreamResponse {
+	completed := dto.OpenAIResponsesResponse{
+		ID:     "resp_relay_eof",
+		Object: "response",
+		Status: json.RawMessage(`"completed"`),
+		Output: append([]dto.ResponsesOutput(nil), items...),
+	}
+	if info != nil {
+		completed.Model = info.UpstreamModelName
+	}
+	if template != nil {
+		completed = *template
+		completed.Status = json.RawMessage(`"completed"`)
+		completed.Error = nil
+		completed.IncompleteDetails = nil
+		completed.Output = append([]dto.ResponsesOutput(nil), items...)
+	}
+	ensureResponsesOutputText(&completed, items, text)
+	if usage != nil {
+		promptTokens := 0
+		if info != nil {
+			promptTokens = info.GetEstimatePromptTokens()
+		}
+		completed.Usage = &dto.Usage{
+			InputTokens:      promptTokens,
+			OutputTokens:     usage.CompletionTokens,
+			TotalTokens:      promptTokens + usage.CompletionTokens,
+			PromptTokens:     promptTokens,
+			CompletionTokens: usage.CompletionTokens,
+		}
+	}
+	return dto.ResponsesStreamResponse{Type: "response.completed", Response: &completed}
+}
+
 func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		logger.LogError(c, "invalid response or response body")
@@ -81,6 +122,8 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
 	var completedItems []dto.ResponsesOutput
+	var responseTemplate *dto.OpenAIResponsesResponse
+	terminalSeen := false
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 
@@ -91,9 +134,15 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
+		if streamResponse.Response != nil && responseTemplate == nil {
+			template := *streamResponse.Response
+			template.Output = nil
+			responseTemplate = &template
+		}
 		responseData := data
 		switch streamResponse.Type {
 		case "response.completed":
+			terminalSeen = true
 			if streamResponse.Response != nil {
 				if ensureResponsesOutputText(streamResponse.Response, completedItems, responseTextBuilder.String()) {
 					if normalized, err := common.Marshal(streamResponse); err == nil {
@@ -120,6 +169,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					c.Set("image_generation_call_size", streamResponse.Response.GetSize())
 				}
 			}
+		case "response.incomplete", "response.failed", "error":
+			// Preserve an explicit upstream terminal/error event. EOF repair is
+			// only for streams that ended without any terminal event at all.
+			terminalSeen = true
 		case "response.output_text.delta":
 			// 处理输出文本
 			responseTextBuilder.WriteString(streamResponse.Delta)
@@ -159,6 +212,14 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	}
 
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+
+	if !terminalSeen {
+		synthetic := synthesizeResponsesCompletion(info, responseTemplate, completedItems, responseTextBuilder.String(), usage)
+		if normalized, err := common.Marshal(synthetic); err == nil {
+			logger.LogWarn(c, "Responses stream ended at EOF before response.completed; synthesized completion")
+			sendResponsesStreamData(c, synthetic, string(normalized))
+		}
+	}
 
 	info.SetResponseContent(responseTextBuilder.String())
 
