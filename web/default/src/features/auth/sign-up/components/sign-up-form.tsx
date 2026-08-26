@@ -169,6 +169,7 @@ export function SignUpForm({
         email: data.email || undefined,
         verification_code: verificationCode || undefined,
         aff_code: getAffiliateCode(),
+        legal_consent_accepted: !requiresLegalConsent || agreedToLegal,
         turnstile: turnstileToken,
       })
 

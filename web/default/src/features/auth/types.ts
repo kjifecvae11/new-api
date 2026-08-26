@@ -38,6 +38,7 @@ export interface RegisterPayload {
   email?: string
   verification_code?: string
   aff_code?: string
+  legal_consent_accepted: boolean
   turnstile?: string
 }
 

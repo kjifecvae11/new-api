@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -138,6 +139,8 @@ func GetStatus(c *gin.Context) {
 
 	data := gin.H{
 		"version":                     common.Version,
+		"source_code_url":             strings.TrimRight(os.Getenv("SOURCE_CODE_URL"), "/"),
+		"source_code_commit":          strings.TrimSpace(os.Getenv("SOURCE_CODE_COMMIT")),
 		"start_time":                  common.StartTime,
 		"email_verification":          common.EmailVerificationEnabled,
 		"github_oauth":                common.GitHubOAuthEnabled,

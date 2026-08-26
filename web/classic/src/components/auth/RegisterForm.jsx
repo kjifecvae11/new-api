@@ -235,6 +235,8 @@ const RegisterForm = () => {
           affCode = localStorage.getItem('aff');
         }
         inputs.aff_code = affCode;
+        inputs.legal_consent_accepted =
+          !(hasUserAgreement || hasPrivacyPolicy) || agreedToTerms;
         const res = await API.post(
           `/api/user/register?turnstile=${turnstileToken}`,
           inputs,

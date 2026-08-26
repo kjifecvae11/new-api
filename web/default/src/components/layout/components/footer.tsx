@@ -124,16 +124,30 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
 // row. inline=false wraps in a centered/right-aligned div (default).
 function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
   const { t } = useTranslation()
+  const { status } = useStatus()
+  const sourceRepository =
+    typeof status?.source_code_url === 'string' &&
+    /^https?:\/\//i.test(status.source_code_url)
+      ? status.source_code_url.replace(/\/$/, '')
+      : 'https://github.com/kjifecvae11/new-api'
+  const sourceCommit =
+    typeof status?.source_code_commit === 'string' &&
+    /^[0-9a-f]{7,40}$/i.test(status.source_code_commit)
+      ? status.source_code_commit
+      : ''
+  const sourceOffer = sourceCommit
+    ? `${sourceRepository}/tree/${sourceCommit}`
+    : sourceRepository
   const content = (
     <span className='text-muted-foreground/45'>
       &copy; {props.currentYear}{' '}
       <a
-        href='https://github.com/QuantumNous/new-api'
+        href={sourceOffer}
         target='_blank'
         rel='noopener noreferrer'
         className='text-foreground/70 hover:text-foreground font-medium transition-colors'
       >
-        {t('New API')}
+        {t('Deployed source (AGPL-3.0)')}
       </a>
       . {t(NEW_API_FOOTER_ATTRIBUTION_KEY)}
     </span>
