@@ -214,6 +214,34 @@ func TestResponsesWebsocketCodexRetriesBeforeOutputDisconnect(t *testing.T) {
 	require.Equal(t, requestPayload, payload)
 }
 
+func TestResponsesWebsocketSynthesizesCompletionOnGracefulClose(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6-sol"}
+	state.activate(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5.6-sol"}}, []byte(`{"type":"response.create"}`))
+	state.appendText("completed text")
+
+	payload, ok := state.synthesizeCompletionOnClose()
+	require.True(t, ok)
+	var event dto.ResponsesStreamResponse
+	require.NoError(t, json.Unmarshal(payload, &event))
+	require.Equal(t, "response.completed", event.Type)
+	require.NotNil(t, event.Response)
+	require.JSONEq(t, `"completed"`, string(event.Response.Status))
+	require.NotNil(t, event.Response.Usage)
+	require.NotEmpty(t, event.Response.Output)
+
+	_, ok = state.synthesizeCompletionOnClose()
+	require.False(t, ok, "a close must only synthesize one terminal event")
+}
+
+func TestResponsesWebsocketDoesNotReplaceExplicitTerminalEvent(t *testing.T) {
+	state := &responsesWebsocketState{modelName: "gpt-5.6-sol"}
+	state.activate(&relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gpt-5.6-sol"}}, []byte(`{"type":"response.create"}`))
+	state.markTerminal()
+
+	_, ok := state.synthesizeCompletionOnClose()
+	require.False(t, ok)
+}
+
 func TestResponsesWebsocketCodexFlushesOnlySuccessfulAttemptPrefix(t *testing.T) {
 	state := &responsesWebsocketState{modelName: "gpt-5.6"}
 	requestPayload := []byte(`{"type":"response.create","model":"gpt-5.6","input":"hello"}`)

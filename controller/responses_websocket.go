@@ -191,6 +191,8 @@ func selectResponsesWebsocketChannel(c *gin.Context, modelName string) (*model.C
 type responsesWebsocketActiveRequest struct {
 	info                    *relaycommon.RelayInfo
 	text                    strings.Builder
+	items                   []dto.ResponsesOutput
+	terminalSeen            bool
 	upstreamPayload         []byte
 	codexRetryAttempt       int
 	codexAwaitingRetryStart bool
@@ -259,18 +261,91 @@ func (s *responsesWebsocketState) appendText(delta string) {
 }
 
 func (s *responsesWebsocketState) recordItem(item *dto.ResponsesOutput) {
-	if item == nil || item.Type != dto.BuildInCallWebSearchCall {
+	if item == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.active == nil || s.active.info == nil || s.active.info.ResponsesUsageInfo == nil {
+	if s.active == nil {
+		return
+	}
+	s.active.items = append(s.active.items, *item)
+	if item.Type != dto.BuildInCallWebSearchCall || s.active.info == nil || s.active.info.ResponsesUsageInfo == nil {
 		return
 	}
 	tools := s.active.info.ResponsesUsageInfo.BuiltInTools
 	if tool, ok := tools[dto.BuildInToolWebSearchPreview]; ok && tool != nil {
 		tool.CallCount++
 	}
+}
+
+func (s *responsesWebsocketState) markTerminal() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active != nil {
+		s.active.terminalSeen = true
+	}
+}
+
+// synthesizeCompletionOnClose repairs a graceful upstream WebSocket close
+// that arrived before response.completed. The Codex client requires a
+// terminal event even when the upstream has already delivered the output.
+// Explicit response.incomplete/failed/error events set terminalSeen and are
+// never replaced by this recovery path.
+func (s *responsesWebsocketState) synthesizeCompletionOnClose() ([]byte, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	active := s.active
+	if active == nil || active.terminalSeen {
+		return nil, false
+	}
+	active.terminalSeen = true
+
+	response := dto.OpenAIResponsesResponse{
+		ID:     "resp_relay_ws_eof",
+		Object: "response",
+		Status: json.RawMessage(`"completed"`),
+		Output: append([]dto.ResponsesOutput(nil), active.items...),
+	}
+	if active.info != nil {
+		modelName := ""
+		if active.info.ChannelMeta != nil {
+			modelName = active.info.ChannelMeta.UpstreamModelName
+		}
+		response.Model = modelName
+		promptTokens := active.info.GetEstimatePromptTokens()
+		// The watchdog/fallback path must remain safe during startup and tests,
+		// when the optional tiktoken encoder may not be initialized. Estimation is
+		// sufficient for settling an EOF-recovered WebSocket response.
+		completionTokens := service.EstimateTokenByModel(modelName, active.text.String())
+		response.Usage = &dto.Usage{
+			InputTokens:      promptTokens,
+			OutputTokens:     completionTokens,
+			TotalTokens:      promptTokens + completionTokens,
+			PromptTokens:     promptTokens,
+			CompletionTokens: completionTokens,
+		}
+	}
+	if text := active.text.String(); text != "" {
+		response.Output = append(response.Output, dto.ResponsesOutput{
+			Type:   "message",
+			ID:     "msg_relay_ws_eof",
+			Status: "completed",
+			Role:   "assistant",
+			Content: []dto.ResponsesOutputContent{{
+				Type: "output_text",
+				Text: text,
+			}},
+		})
+	}
+	payload, err := common.Marshal(dto.ResponsesStreamResponse{
+		Type:     "response.completed",
+		Response: &response,
+	})
+	if err != nil {
+		return nil, false
+	}
+	return payload, true
 }
 
 func responsesWebsocketFailureReason(event *dto.ResponsesStreamResponse) string {
@@ -766,6 +841,20 @@ func RelayResponsesWebsocket(c *gin.Context) {
 		messageType, payload, err := readConn.ReadMessage()
 		upstreamMu.RUnlock()
 		if err != nil {
+			if isExpectedWebsocketClose(err) {
+				if payload, ok := state.synthesizeCompletionOnClose(); ok {
+					clientWriteMu.Lock()
+					writeErr := client.WriteMessage(websocket.TextMessage, payload)
+					clientWriteMu.Unlock()
+					if writeErr == nil {
+						var event dto.ResponsesStreamResponse
+						if unmarshalErr := common.Unmarshal(payload, &event); unmarshalErr == nil {
+							settleResponsesWebsocketRequest(c, state.takeActive(), event.Response)
+						}
+						return
+					}
+				}
+			}
 			if !isExpectedWebsocketClose(err) {
 				if retryPayload, retryAttempt, ok := state.retryAfterCodexDisconnect(); ok {
 					logger.LogWarn(c, fmt.Sprintf("codex websocket retry %d/%d after upstream disconnect", retryAttempt, responsesWebsocketCodexRetryAttempts))
@@ -823,8 +912,10 @@ func RelayResponsesWebsocket(c *gin.Context) {
 			case dto.ResponsesOutputTypeItemDone:
 				state.recordItem(event.Item)
 			case "response.completed", "response.incomplete":
+				state.markTerminal()
 				settleResponsesWebsocketRequest(c, state.takeActive(), event.Response)
 			case "response.failed", "error":
+				state.markTerminal()
 				active := state.takeActive()
 				if usage := usageFromResponsesWebsocket(event.Response); usage != nil && usage.TotalTokens > 0 {
 					settleResponsesWebsocketRequest(c, active, event.Response)
