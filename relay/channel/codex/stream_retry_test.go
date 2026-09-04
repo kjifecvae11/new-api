@@ -39,6 +39,19 @@ func TestProbeCodexStreamResponseRetriesWhenFirstEventTimesOut(t *testing.T) {
 	_ = writer.Close()
 }
 
+func TestIsRetryableCodexHTTPStatus(t *testing.T) {
+	for _, status := range []int{500, 502, 503, 599} {
+		if !isRetryableCodexHTTPStatus(status) {
+			t.Fatalf("status %d should be retried", status)
+		}
+	}
+	for _, status := range []int{400, 401, 429, 600} {
+		if isRetryableCodexHTTPStatus(status) {
+			t.Fatalf("status %d should not be retried by the Codex HTTP policy", status)
+		}
+	}
+}
+
 func TestProbeCodexStreamResponseRetriesOverloadAndPreservesBody(t *testing.T) {
 	body := "event: response.created\n" +
 		"data: {\"type\":\"response.created\",\"response\":{\"status\":\"in_progress\",\"output\":[]}}\n\n" +

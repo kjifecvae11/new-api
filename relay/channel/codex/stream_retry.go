@@ -265,6 +265,10 @@ func waitCodexStreamRetry(ctx context.Context, attempt int) error {
 	}
 }
 
+func isRetryableCodexHTTPStatus(statusCode int) bool {
+	return statusCode >= http.StatusInternalServerError && statusCode <= 599
+}
+
 func doCodexRequestWithStreamRetry(
 	adaptor channel.Adaptor,
 	c *gin.Context,
@@ -288,6 +292,14 @@ func doCodexRequestWithStreamRetry(
 		}
 		if resp.StatusCode != http.StatusOK ||
 			!strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") {
+			if isRetryableCodexHTTPStatus(resp.StatusCode) && attempt < codexStreamRetryAttempts {
+				_ = resp.Body.Close()
+				logger.LogWarn(c, fmt.Sprintf("codex HTTP retry %d/%d after status %d", attempt, codexStreamRetryAttempts, resp.StatusCode))
+				if err := waitCodexStreamRetry(c.Request.Context(), attempt); err != nil {
+					return nil, err
+				}
+				continue
+			}
 			return resp, nil
 		}
 
