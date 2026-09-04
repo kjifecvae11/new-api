@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,7 +24,10 @@ import (
 const (
 	codexStreamRetryAttempts = 4
 	codexStreamProbeMaxBytes = 4 << 20
+	codexStreamProbeTimeout  = 30 * time.Second
 )
+
+var errCodexStreamProbeTimeout = errors.New("codex stream probe timeout")
 
 type replayReadCloser struct {
 	io.Reader
@@ -87,7 +91,30 @@ func isRetryableCodexStreamFailure(code string) bool {
 		strings.Contains(code, "try again later")
 }
 
-func probeCodexStreamResponse(resp *http.Response) (retry bool, reason string, err error) {
+func readCodexStreamLine(ctx context.Context, reader *bufio.Reader, timeout time.Duration) ([]byte, error) {
+	type result struct {
+		line []byte
+		err  error
+	}
+	resultChan := make(chan result, 1)
+	go func() {
+		line, err := reader.ReadBytes('\n')
+		resultChan <- result{line: line, err: err}
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case result := <-resultChan:
+		return result.line, result.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return nil, errCodexStreamProbeTimeout
+	}
+}
+
+func probeCodexStreamResponseWithTimeout(ctx context.Context, resp *http.Response, timeout time.Duration) (retry bool, reason string, err error) {
 	if resp == nil || resp.Body == nil {
 		return false, "", fmt.Errorf("invalid codex stream response")
 	}
@@ -98,7 +125,16 @@ func probeCodexStreamResponse(resp *http.Response) (retry bool, reason string, e
 	completed := false
 
 	for prefix.Len() <= codexStreamProbeMaxBytes {
-		line, readErr := reader.ReadBytes('\n')
+		line, readErr := readCodexStreamLine(ctx, reader, timeout)
+		if errors.Is(readErr, errCodexStreamProbeTimeout) {
+			_ = originalBody.Close()
+			rebuildCodexStreamBody(resp, prefix.Bytes(), reader, originalBody)
+			return true, "stream_probe_timeout", nil
+		}
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			_ = originalBody.Close()
+			return false, "", readErr
+		}
 		if len(line) > 0 {
 			_, _ = prefix.Write(line)
 		}
@@ -176,6 +212,10 @@ func probeCodexStreamResponse(resp *http.Response) (retry bool, reason string, e
 	return false, "", nil
 }
 
+func probeCodexStreamResponse(resp *http.Response) (retry bool, reason string, err error) {
+	return probeCodexStreamResponseWithTimeout(context.Background(), resp, codexStreamProbeTimeout)
+}
+
 func codexUnavailableResponse(resp *http.Response, reason string) *http.Response {
 	if resp == nil {
 		resp = &http.Response{Header: make(http.Header)}
@@ -251,7 +291,7 @@ func doCodexRequestWithStreamRetry(
 			return resp, nil
 		}
 
-		retry, reason, probeErr := probeCodexStreamResponse(resp)
+		retry, reason, probeErr := probeCodexStreamResponseWithTimeout(c.Request.Context(), resp, codexStreamProbeTimeout)
 		if probeErr != nil {
 			return nil, probeErr
 		}
