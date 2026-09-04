@@ -1,10 +1,12 @@
 package codex
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func codexTestStreamResponse(body string) *http.Response {
@@ -15,6 +17,26 @@ func codexTestStreamResponse(body string) *http.Response {
 		},
 		Body: io.NopCloser(strings.NewReader(body)),
 	}
+}
+
+func TestProbeCodexStreamResponseRetriesWhenFirstEventTimesOut(t *testing.T) {
+	reader, writer := io.Pipe()
+	resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: reader}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		retry, reason, err := probeCodexStreamResponseWithTimeout(context.Background(), resp, 10*time.Millisecond)
+		if err != nil || !retry || reason != "stream_probe_timeout" {
+			t.Errorf("probeCodexStreamResponseWithTimeout() = (%v, %q, %v), want timeout retry", retry, reason, err)
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("probe did not return after first-event timeout")
+	}
+	_ = writer.Close()
 }
 
 func TestProbeCodexStreamResponseRetriesOverloadAndPreservesBody(t *testing.T) {
