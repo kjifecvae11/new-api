@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -62,6 +63,18 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	lowerMessage := strings.ToLower(err.Error())
 	search, _ := AcSearch(lowerMessage, operation_setting.AutomaticDisableKeywords, true)
 	return search
+}
+
+// ShouldDisableRelayChannel applies the automatic-ban policy to a relay
+// channel. Codex upstreams can return transient 5xx responses while the
+// account is still valid; those errors should be retried without taking the
+// only healthy Codex channel out of rotation. Authentication failures (401)
+// and the configured disable keywords retain the existing auto-ban behavior.
+func ShouldDisableRelayChannel(channelType int, err *types.NewAPIError) bool {
+	if channelType == constant.ChannelTypeCodex && err != nil && err.StatusCode >= 500 && err.StatusCode <= 599 {
+		return false
+	}
+	return ShouldDisableChannel(err)
 }
 
 func ShouldEnableChannel(newAPIError *types.NewAPIError, status int) bool {
