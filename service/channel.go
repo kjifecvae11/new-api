@@ -71,8 +71,13 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 // only healthy Codex channel out of rotation. Authentication failures (401)
 // and the configured disable keywords retain the existing auto-ban behavior.
 func ShouldDisableRelayChannel(channelType int, err *types.NewAPIError) bool {
-	if channelType == constant.ChannelTypeCodex && err != nil && err.StatusCode >= 500 && err.StatusCode <= 599 {
-		return false
+	if channelType == constant.ChannelTypeCodex && err != nil {
+		// A shared Codex OAuth account commonly reaches transient request,
+		// rate-limit, or upstream capacity limits. Keep the account in rotation
+		// so one slow request cannot take the only Codex channel offline.
+		if err.StatusCode == 408 || err.StatusCode == 425 || err.StatusCode == 429 || (err.StatusCode >= 500 && err.StatusCode <= 599) {
+			return false
+		}
 	}
 	return ShouldDisableChannel(err)
 }

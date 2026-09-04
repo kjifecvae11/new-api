@@ -40,12 +40,12 @@ func TestProbeCodexStreamResponseRetriesWhenFirstEventTimesOut(t *testing.T) {
 }
 
 func TestIsRetryableCodexHTTPStatus(t *testing.T) {
-	for _, status := range []int{500, 502, 503, 599} {
+	for _, status := range []int{408, 425, 429, 500, 502, 503, 599} {
 		if !isRetryableCodexHTTPStatus(status) {
 			t.Fatalf("status %d should be retried", status)
 		}
 	}
-	for _, status := range []int{400, 401, 429, 600} {
+	for _, status := range []int{400, 401, 400, 403, 600} {
 		if isRetryableCodexHTTPStatus(status) {
 			t.Fatalf("status %d should not be retried by the Codex HTTP policy", status)
 		}

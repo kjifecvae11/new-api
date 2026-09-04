@@ -10,13 +10,14 @@ import (
 )
 
 func TestShouldDisableRelayChannelSkipsTransientCodex5xx(t *testing.T) {
-	err := types.NewErrorWithStatusCode(
-		errors.New("transient upstream"),
-		types.ErrorCodeBadResponseStatusCode,
-		http.StatusBadGateway,
-	)
-
-	if ShouldDisableRelayChannel(constant.ChannelTypeCodex, err) {
-		t.Fatalf("transient Codex 5xx must not auto-disable the channel")
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests, http.StatusBadGateway} {
+		err := types.NewErrorWithStatusCode(
+			errors.New("transient upstream"),
+			types.ErrorCodeBadResponseStatusCode,
+			status,
+		)
+		if ShouldDisableRelayChannel(constant.ChannelTypeCodex, err) {
+			t.Fatalf("transient Codex status %d must not auto-disable the channel", status)
+		}
 	}
 }
