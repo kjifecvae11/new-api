@@ -266,7 +266,10 @@ func waitCodexStreamRetry(ctx context.Context, attempt int) error {
 }
 
 func isRetryableCodexHTTPStatus(statusCode int) bool {
-	return statusCode >= http.StatusInternalServerError && statusCode <= 599
+	return statusCode == http.StatusRequestTimeout ||
+		statusCode == http.StatusTooEarly ||
+		statusCode == http.StatusTooManyRequests ||
+		(statusCode >= http.StatusInternalServerError && statusCode <= 599)
 }
 
 func doCodexRequestWithStreamRetry(
